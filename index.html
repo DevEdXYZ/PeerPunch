@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PeerPunch — P2P Comms</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:          #060810;
+      --bg2:         #090D1A;
+      --bg3:         #0D1120;
+      --panel:       rgba(9, 13, 26, 0.95);
+      --panel-b:     rgba(255,255,255,0.055);
+      --panel-b-acc: rgba(0,240,192,0.22);
+      --inp:         rgba(5, 8, 18, 0.8);
+      --hover:       rgba(0,240,192,0.07);
+      --acc:         #00F0C0;
+      --acc-dim:     rgba(0,240,192,0.12);
+      --acc-glow:    rgba(0,240,192,0.35);
+      --acc2:        #00FFCC;
+      --danger:      #FF4365;
+      --danger-dim:  rgba(255,67,101,0.12);
+      --danger-b:    rgba(255,67,101,0.3);
+      --success:     #00E676;
+      --success-dim: rgba(0,230,118,0.12);
+      --warn:        #FFB830;
+      --warn-dim:    rgba(255,184,48,0.12);
+      --t1:          #EDF0F7;
+      --t2:          #A0AFCA;
+      --t3:          #5E7095;
+      --t4:          #38496B;
+      --r-sm:        5px;
+      --r:           10px;
+      --r-lg:        16px;
+      --r-xl:        24px;
+      --sw:          248px;
+      --fb:          'Syne', sans-serif;
+      --fs:          'Plus Jakarta Sans', sans-serif;
+      --fm:          'JetBrains Mono', monospace;
+      --ease:        cubic-bezier(0.4,0,0.2,1);
+      --ease-sp:     cubic-bezier(0.34,1.56,0.64,1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      height: 100dvh; /* Fixes mobile Safari bottom bar issue */
+      width: 100%; overflow: hidden;
+      background: var(--bg);
+      color: var(--t1);
+      font-family: var(--fs);
+      font-weight: 400;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    ::selection { background: var(--acc); color: var(--bg); }
+    input, textarea { user-select: text; -webkit-user-select: text; }
+
+    /* ── Animated Background ── */
+    .bg {
+      position: fixed; inset: 0; overflow: hidden; z-index: 0;
+      background-color: var(--bg);
+      /* Subtle tech grid using your accent color */
+      background-image: 
+        linear-gradient(rgba(0, 240, 192, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 192, 0.025) 1px, transparent 1px);
+      background-size: 35px 35px;
+      background-position: center center;
+    }
+    .blob {
+      position: absolute; border-radius: 50%; pointer-events: none;
+      filter: blur(80px); opacity: 0.65; /* Made blobs much more visible */
+    }
+    .blob-1 {
+      width: 600px; height: 600px;
+      background: rgba(0, 240, 192, 0.4); /* Cyan */
+      top: -150px; left: -100px;
+      animation: b1 18s ease-in-out infinite alternate;
+    }
+    .blob-2 {
+      width: 500px; height: 500px;
+      background: rgba(99, 102, 241, 0.4); /* Indigo deep accent */
+      bottom: -150px; right: -100px;
+      animation: b2 22s ease-in-out infinite alternate;
+    }
+    .blob-3 {
+      width: 700px; height: 700px;
+      background: rgba(0, 255, 204, 0.1);
+      top: 50%; left: 30%;
+      animation: b3 28s ease-in-out infinite alternate;
+    }
+    
+    /* Smoother, continuous meandering animations */
+    @keyframes b1 { 
+      0% { transform: translate(0,0) scale(1); } 
+      100% { transform: translate(150px, 80px) scale(1.1); } 
+    }
+    @keyframes b2 { 
+      0% { transform: translate(0,0) scale(1); } 
+      100% { transform: translate(-120px, -100px) scale(1.2); } 
+    }
+    @keyframes b3 { 
+      0% { transform: translate(0,0) scale(1); } 
+      100% { transform: translate(100px, -60px) scale(0.9); } 
+    }
+
+    /* ── App Shell ── */
+    .app {
+      position: relative; z-index: 1;
+      display: flex; flex-direction: column;
+      height: 100vh; /* Fallback */
+      height: 100dvh; /* Fixes mobile Safari bottom bar issue */
+      width: 100%;
+      max-width: 1560px; margin: 0 auto;
+      padding: 8px 10px; 
+      /* Prevents UI from hiding under the iPhone swipe bar */
+      padding-bottom: max(8px, env(safe-area-inset-bottom)); 
+      gap: 7px;
+    }
+
+    /* ── Top Bar ── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0; padding: 0 18px;
+      height: 48px;
+      background: var(--panel);
+      border: 1px solid var(--panel-b);
+      border-radius: var(--r-lg);
+      backdrop-filter: blur(20px);
+      gap: 12px; flex-wrap: wrap; z-index: 3;
+    }
+    .topbar__left { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .topbar__logo {
+      font-family: var(--fb); font-size: 1.25rem; font-weight: 800;
+      color: var(--t1); letter-spacing: -0.03em; line-height: 1;
+    }
+    .topbar__logo span { color: var(--acc); }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--t4); transition: all 0.4s var(--ease); flex-shrink: 0;
+    }
+    .dot--on { background: var(--acc); box-shadow: 0 0 10px var(--acc-glow); }
+    .topbar__meta {
+      display: flex; align-items: center; gap: 16px;
+      font-family: var(--fm); font-size: 0.65rem;
+      color: var(--t3); letter-spacing: 0.04em;
+      flex: 1; justify-content: center; flex-wrap: wrap;
+    }
+    .topbar__meta-chip {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--inp); border: 1px solid var(--panel-b);
+      border-radius: 20px; padding: 3px 10px;
+      white-space: nowrap;
+    }
+    .topbar__meta-chip strong { color: var(--acc); font-weight: 500; }
+    .topbar__actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      padding: 7px 14px; border-radius: 20px;
+      font-size: 0.73rem; font-weight: 500; font-family: var(--fs);
+      cursor: pointer; border: 1px solid transparent;
+      transition: all 0.18s var(--ease); white-space: nowrap;
+      outline: none; background: transparent; color: var(--t2);
+      letter-spacing: 0.02em;
+    }
+    .btn:focus-visible { box-shadow: 0 0 0 2px var(--acc-glow); }
+    .btn--primary { background: var(--acc); color: var(--bg2); border-color: var(--acc); font-weight: 600; }
+    .btn--primary:hover { background: var(--acc2); border-color: var(--acc2); box-shadow: 0 4px 20px var(--acc-dim); }
+    .btn--ghost { border-color: var(--panel-b); }
+    .btn--ghost:hover { border-color: var(--acc); color: var(--acc); background: var(--acc-dim); }
+    .btn--danger { border-color: var(--danger-b); color: var(--danger); }
+    .btn--danger:hover { background: var(--danger-dim); }
+    .btn--sm { padding: 5px 10px; font-size: 0.68rem; border-radius: 14px; }
+    .btn--icon {
+      width: 34px; height: 34px; padding: 0; border-radius: 50%;
+      font-size: 0.95rem; flex-shrink: 0;
+      border: 1px solid var(--panel-b); background: var(--inp); color: var(--t3);
+    }
+    .btn--icon:hover { border-color: var(--acc); color: var(--acc); background: var(--acc-dim); }
+    .btn--icon.active { background: var(--acc); color: var(--bg2); border-color: var(--acc); box-shadow: 0 0 16px var(--acc-dim); }
+    .btn--icon.muted { background: var(--danger-dim); border-color: var(--danger-b); color: var(--danger); }
+
+    /* ── Main Content ── */
+    .main { flex: 1; display: flex; gap: 7px; min-height: 0; z-index: 1; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sw); flex-shrink: 0;
+      display: flex; flex-direction: column;
+      background: var(--panel); border: 1px solid var(--panel-b);
+      border-radius: var(--r-lg); overflow: hidden;
+      backdrop-filter: blur(18px); z-index: 2;
+    }
+    .sidebar__head {
+      padding: 12px 14px 6px;
+      font-family: var(--fm); font-size: 0.58rem; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--t4); flex-shrink: 0;
+    }
+    .sidebar__peers {
+      flex: 1; overflow-y: auto;
+      padding: 4px 8px; display: flex; flex-direction: column; gap: 2px;
+    }
+    .peer {
+      display: flex; align-items: center; gap: 9px;
+      padding: 8px 9px; border-radius: var(--r-sm);
+      transition: background 0.15s; cursor: default;
+    }
+    .peer:hover { background: var(--hover); }
+    .peer__av {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      background: var(--acc-dim); border: 1px solid rgba(0,240,192,0.15);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--fb); font-size: 0.82rem; font-weight: 700;
+      color: var(--acc);
+    }
+    .peer__info { flex: 1; min-width: 0; }
+    .peer__name {
+      font-size: 0.78rem; font-weight: 500; color: var(--t2);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .peer__status {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 0.6rem; color: var(--t4); margin-top: 1px;
+    }
+    .peer__sdot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+    .peer__sdot--on { background: var(--acc); box-shadow: 0 0 5px var(--acc-glow); }
+    .peer__sdot--spk {
+      background: #FFD740;
+      animation: spk 0.7s ease-in-out infinite alternate;
+    }
+    @keyframes spk { from{box-shadow:0 0 4px rgba(255,215,64,0.3)} to{box-shadow:0 0 12px rgba(255,215,64,0.7)} }
+    .peer__badges { display: flex; gap: 2px; }
+    .peer__badge { font-size: 0.7rem; opacity: 0.6; }
+    .sidebar__foot {
+      padding: 10px 12px; border-top: 1px solid var(--panel-b);
+      display: flex; gap: 5px; justify-content: center; flex-shrink: 0;
+    }
+
+    /* ── Main Panel ── */
+    .panel { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; min-height: 0; }
+
+    /* ── Screen Share ── */
+    .screens { display: none; gap: 7px; max-height: 44%; overflow-x: auto; padding: 1px; flex-shrink: 0; }
+    .screens--on { display: flex; }
+    .screen-tile {
+      flex: 1; min-width: 280px; max-width: 680px;
+      background: #000; border: 1px solid var(--panel-b);
+      border-radius: var(--r); overflow: hidden; position: relative;
+      aspect-ratio: 16/9; max-height: 100%;
+    }
+    .screen-tile video { width: 100%; height: 100%; object-fit: contain; background: #050508; display: block; }
+    .screen-tile__lbl {
+      position: absolute; bottom: 8px; left: 10px; z-index: 2;
+      background: rgba(0,0,0,0.7); border: 1px solid rgba(0,240,192,0.2);
+      color: var(--acc); padding: 3px 9px; border-radius: 8px;
+      font-size: 0.62rem; font-family: var(--fm); letter-spacing: 0.03em;
+      pointer-events: none;
+    }
+    .screen-tile--local { border-color: rgba(0,240,192,0.2); }
+
+    /* ── Chat ── */
+    .chat {
+      flex: 1; display: flex; flex-direction: column;
+      background: var(--panel); border: 1px solid var(--panel-b);
+      border-radius: var(--r-lg); overflow: hidden;
+      backdrop-filter: blur(18px); min-height: 0;
+    }
+    .chat__msgs {
+      flex: 1; overflow-y: auto;
+      padding: 14px 16px; display: flex; flex-direction: column; gap: 5px;
+      min-height: 0; scroll-behavior: smooth;
+    }
+    .chat__typing {
+      padding: 0 18px 6px; height: 22px; flex-shrink: 0;
+      font-size: 0.67rem; color: var(--t4); font-style: italic;
+      font-family: var(--fm); letter-spacing: 0.02em;
+      transition: opacity 0.2s;
+    }
+    .chat__bar {
+      display: flex; gap: 6px; padding: 10px 12px;
+      border-top: 1px solid var(--panel-b); flex-shrink: 0; align-items: center;
+    }
+    .chat__inp {
+      flex: 1; min-width: 0;
+      background: var(--inp); border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 22px; padding: 10px 16px;
+      color: var(--t1); font-family: var(--fs); font-size: 0.8rem; outline: none;
+      transition: border-color 0.18s, box-shadow 0.18s;
+      letter-spacing: 0.01em;
+    }
+    .chat__inp:focus { border-color: rgba(0,240,192,0.4); box-shadow: 0 0 0 3px var(--acc-dim); }
+    .chat__inp::placeholder { color: var(--t4); }
+    .attach-btn {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 1px solid var(--panel-b); background: var(--inp);
+      color: var(--t3); cursor: pointer; font-size: 0.9rem;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.18s; flex-shrink: 0;
+    }
+    .attach-btn:hover { border-color: var(--acc); color: var(--acc); background: var(--acc-dim); }
+
+    /* ── Messages ── */
+    .msg {
+      display: flex; flex-direction: column; gap: 2px;
+      max-width: 76%; animation: msgIn 0.2s var(--ease-sp);
+    }
+    @keyframes msgIn { from{opacity:0;transform:translateY(8px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+    .msg--me { align-self: flex-end; }
+    .msg--them { align-self: flex-start; }
+    .msg--sys { align-self: center; max-width: 88%; }
+    .msg--file { max-width: 72%; }
+    .msg__meta {
+      font-family: var(--fm); font-size: 0.58rem;
+      color: var(--t4); letter-spacing: 0.03em; padding: 0 6px;
+    }
+    .msg__bub {
+      padding: 9px 14px; border-radius: 18px;
+      font-size: 0.8rem; line-height: 1.5; word-break: break-word; letter-spacing: 0.01em;
+    }
+    .msg--me .msg__bub {
+      background: linear-gradient(135deg, var(--acc), #00D4AA);
+      color: #040C12; border-bottom-right-radius: 5px; font-weight: 500;
+    }
+    .msg--them .msg__bub {
+      background: var(--bg3); border: 1px solid var(--panel-b);
+      color: var(--t1); border-bottom-left-radius: 5px;
+    }
+    .msg--sys .msg__bub {
+      background: transparent; border: 1px solid var(--panel-b);
+      color: var(--t4); font-size: 0.68rem; font-style: italic;
+      text-align: center; border-radius: 10px; padding: 4px 12px;
+    }
+    /* File bubble */
+    .msg__bub--file {
+      background: var(--inp); border: 1px solid rgba(0,240,192,0.18);
+      display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
+      border-radius: var(--r-lg) !important;
+    }
+    .fbub__row { display: flex; align-items: center; gap: 10px; }
+    .fbub__icon { font-size: 1.5rem; flex-shrink: 0; }
+    .fbub__info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .fbub__name { font-size: 0.78rem; font-weight: 600; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fbub__size { font-size: 0.62rem; color: var(--t3); font-family: var(--fm); }
+    .fbub__btn {
+      padding: 5px 12px; border-radius: 10px; cursor: pointer;
+      border: 1px solid var(--acc); color: var(--acc);
+      background: transparent; font-family: var(--fs); font-size: 0.68rem; font-weight: 500;
+      transition: all 0.18s; flex-shrink: 0; white-space: nowrap;
+    }
+    .fbub__btn:hover { background: var(--acc); color: var(--bg2); }
+    .fbub__btn--done { border-color: var(--success); color: var(--success); cursor: default; pointer-events: none; }
+    .fbub__progress { width: 100%; height: 3px; background: var(--panel-b); border-radius: 2px; overflow: hidden; }
+    .fbub__bar { height: 100%; background: var(--acc); border-radius: 2px; transition: width 0.3s; width: 0%; }
+    .fbub__preview { border-radius: var(--r-sm); overflow: hidden; max-width: 100%; }
+    .fbub__preview img, .fbub__preview video {
+      width: 100%; max-height: 240px; object-fit: contain;
+      border-radius: var(--r-sm); display: block;
+      background: #000;
+    }
+    .fbub__preview video { cursor: pointer; }
+
+    .overlay {
+      position: fixed; inset: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+      
+      /* ↓ Lowered the opacity from 0.88 to 0.4 ↓ */
+      background: rgba(4,6,14,0.40); 
+      
+      /* ↓ Lowered the blur so it doesn't wash out the blobs ↓ */
+      backdrop-filter: blur(8px); 
+      
+      transition: opacity 0.3s var(--ease), visibility 0.3s;
+    }
+    .overlay--hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .card {
+      background: var(--panel); border: 1px solid var(--panel-b);
+      border-radius: var(--r-xl); padding: 36px 30px;
+      width: min(92%, 420px);
+      box-shadow: 0 40px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,240,192,0.05);
+      animation: cardIn 0.5s var(--ease-sp);
+      display: flex; flex-direction: column; gap: 18px;
+      text-align: center;
+    }
+    @keyframes cardIn { from{opacity:0;transform:translateY(24px) scale(0.95)} to{opacity:1;transform:none} }
+    .card__logo { font-family: var(--fb); font-size: 2.6rem; font-weight: 800; letter-spacing: -0.04em; }
+    .card__logo span { color: var(--acc); }
+    .card__sub { font-size: 0.8rem; color: var(--t3); letter-spacing: 0.02em; margin-top: -8px; }
+    .field { display: flex; flex-direction: column; gap: 5px; text-align: left; }
+    .field__lbl { font-family: var(--fm); font-size: 0.6rem; color: var(--acc); letter-spacing: 0.1em; text-transform: uppercase; }
+    .field__wrap { position: relative; display: flex; }
+    .field__inp {
+      width: 100%; background: var(--inp); border: 1px solid rgba(255,255,255,0.07);
+      border-radius: var(--r-sm); padding: 11px 14px; color: var(--t1);
+      font-family: var(--fs); font-size: 0.88rem; outline: none;
+      transition: border-color 0.18s, box-shadow 0.18s; letter-spacing: 0.01em;
+    }
+    .field__inp:focus { border-color: rgba(0,240,192,0.45); box-shadow: 0 0 0 3px var(--acc-dim); }
+    .field__inp--pr { padding-right: 42px; }
+    .field__hint { font-size: 0.6rem; color: var(--t4); }
+    .field__eye {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; color: var(--t4);
+      font-size: 0.9rem; padding: 4px; transition: color 0.15s;
+    }
+    .field__eye:hover { color: var(--acc); }
+    .field__row { display: flex; gap: 6px; }
+    .field__row .field__inp { flex: 1; }
+    .field__rand {
+      background: var(--inp); border: 1px solid rgba(255,255,255,0.07);
+      border-radius: var(--r-sm); padding: 0 12px; cursor: pointer;
+      color: var(--t3); font-size: 1rem; transition: all 0.18s;
+      flex-shrink: 0; display: flex; align-items: center;
+    }
+    .field__rand:hover { border-color: var(--acc); color: var(--acc); }
+    .card__invite-hint {
+      font-size: 0.68rem; color: var(--t4); background: var(--acc-dim);
+      border: 1px solid rgba(0,240,192,0.15); border-radius: var(--r-sm);
+      padding: 7px 12px; letter-spacing: 0.01em;
+    }
+    .card__invite-hint strong { color: var(--acc); }
+
+    /* ── Notifications ── */
+    .notifs {
+      position: fixed; top: 16px; right: 16px; z-index: 300;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+      align-items: flex-end;
+    }
+    .notif {
+      background: var(--panel); border: 1px solid var(--panel-b);
+      border-radius: var(--r); padding: 10px 14px;
+      font-size: 0.74rem; color: var(--t1);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+      display: flex; align-items: center; gap: 8px;
+      max-width: 300px; pointer-events: auto;
+      animation: nIn 0.3s var(--ease-sp), nOut 0.3s var(--ease) 2.7s forwards;
+    }
+    @keyframes nIn { from{opacity:0;transform:translateX(50px)} to{opacity:1;transform:none} }
+    @keyframes nOut { to{opacity:0;transform:translateX(50px)} }
+    .notif--success { border-color: rgba(0,230,118,0.25); }
+    .notif--error { border-color: rgba(255,67,101,0.25); }
+    .notif--warning { border-color: rgba(255,184,48,0.25); }
+    .notif__icon { font-size: 1rem; flex-shrink: 0; }
+    .notif__text { flex: 1; letter-spacing: 0.01em; line-height: 1.4; }
+
+    /* ── Enable audio floating btn ── */
+    .audio-btn {
+      position: fixed; bottom: 20px; left: 20px; z-index: 500;
+      padding: 10px 20px; background: var(--acc); color: var(--bg2);
+      border: none; border-radius: 30px; cursor: pointer;
+      font-family: var(--fs); font-weight: 600; font-size: 0.82rem;
+      box-shadow: 0 8px 24px var(--acc-glow); transition: all 0.2s;
+    }
+    .audio-btn:hover { background: var(--acc2); transform: translateY(-1px); }
+
+    /* ── Drag-drop overlay ── */
+    .drop-indicator {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,240,192,0.06);
+      border: 2px dashed rgba(0,240,192,0.4);
+      border-radius: var(--r-lg);
+      display: none; align-items: center; justify-content: center;
+      font-family: var(--fb); font-size: 1.5rem; font-weight: 700;
+      color: var(--acc); letter-spacing: -0.02em; pointer-events: none;
+      margin: 8px;
+    }
+    .drop-indicator--on { display: flex; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 3px; height: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--panel-b); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--acc-dim); }
+
+    /* ── Responsive ── */
+    @media (max-width: 780px) {
+      .app { padding: 4px 5px; gap: 4px; }
+      .main { flex-direction: column; }
+      .sidebar { width: 100%; flex-shrink: 0; max-height: 120px; flex-direction: row; border-radius: var(--r); }
+      .sidebar__peers { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding: 4px; gap: 4px; }
+      .peer { flex-direction: column; gap: 4px; min-width: 64px; text-align: center; padding: 6px 4px; }
+      .peer__av { width: 26px; height: 26px; font-size: 0.7rem; }
+      .peer__name { font-size: 0.62rem; }
+      .peer__status { justify-content: center; }
+      .sidebar__head { display: none; }
+      .sidebar__foot { border-top: none; border-left: 1px solid var(--panel-b); padding: 8px; flex-direction: column; }
+      .topbar__meta { display: none; }
+      .msg { max-width: 90%; }
+      .screen-tile { min-width: 220px; }
+    }
+    @media (max-width: 440px) {
+      .card { padding: 24px 18px; gap: 14px; }
+      .card__logo { font-size: 2rem; }
+      .topbar__logo { font-size: 1.05rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg" aria-hidden="true">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <div class="notifs" id="notifs"></div>
+  <div class="drop-indicator" id="drop-indicator">Drop files to send 📤</div>
+
+  <!-- Join Overlay -->
+  <div class="overlay" id="overlay">
+    <div class="card">
+      <div class="card__logo">Peer<span>Punch</span></div>
+      <p class="card__sub">Voice · Chat · Screen Share · Files — No Servers</p>
+
+      <div id="invite-hint" style="display:none;" class="card__invite-hint">
+        You were invited to: <strong id="invite-room-name"></strong>
+      </div>
+
+      <div class="field">
+        <label class="field__lbl" for="f-room">Room ID</label>
+        <div class="field__wrap field__row">
+          <input class="field__inp" id="f-room" type="text" placeholder="e.g. epic-room-77" autocomplete="off" spellcheck="false">
+          <button class="field__rand" id="rand-btn" title="Random room name">🎲</button>
+        </div>
+        <span class="field__hint">Share this with friends — anyone with the same ID joins</span>
+      </div>
+
+      <div class="field">
+        <label class="field__lbl" for="f-name">Display Name</label>
+        <input class="field__inp" id="f-name" type="text" placeholder="e.g. John Doe" autocomplete="off" maxlength="30">
+      </div>
+
+      <div class="field">
+        <label class="field__lbl" for="f-pass">Password <span style="opacity:0.4">(optional)</span></label>
+        <div class="field__wrap">
+          <input class="field__inp field__inp--pr" id="f-pass" type="password" placeholder="Shared secret for private rooms" autocomplete="off">
+          <button class="field__eye" id="pass-eye" aria-label="Show password">👁️</button>
+        </div>
+      </div>
+
+      <button class="btn btn--primary" id="join-btn" style="width:100%;padding:13px;font-size:0.88rem;border-radius:var(--r);">
+        Connect to Room →
+      </button>
+    </div>
+  </div>
+
+  <!-- App Shell -->
+  <div class="app" id="app" style="display:none;">
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar__left">
+        <span class="topbar__logo">Peer<span>Punch</span></span>
+        <div class="dot" id="conn-dot" title="Connection status"></div>
+      </div>
+      <div class="topbar__meta">
+        <div class="topbar__meta-chip">Room: <strong id="room-lbl">—</strong></div>
+        <div class="topbar__meta-chip">Peers: <strong id="peer-cnt">0</strong></div>
+        <div class="topbar__meta-chip" id="self-chip" style="display:none;"></div>
+      </div>
+      <div class="topbar__actions">
+        <button class="btn btn--ghost btn--sm" id="invite-btn" title="Copy invite link">🔗 Invite</button>
+        <button class="btn btn--danger btn--sm" id="leave-btn">Leave</button>
+      </div>
+    </div>
+
+    <!-- Main -->
+    <div class="main">
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="sidebar__head">Members</div>
+        <div class="sidebar__peers" id="peer-list"></div>
+        <div class="sidebar__foot">
+          <button class="btn--icon btn" id="mic-btn" title="Microphone (M)">🎤</button>
+          <button class="btn--icon btn" id="screen-btn" title="Screen share (S)">🖥️</button>
+          <button class="btn--icon btn" id="file-btn" title="Send file (F)">📎</button>
+        </div>
+      </div>
+
+      <!-- Main Panel -->
+      <div class="panel">
+        <div class="screens" id="screens"></div>
+        <div class="chat">
+          <div class="chat__msgs" id="msgs">
+            <div class="msg msg--sys"><div class="msg__bub">Welcome to PeerPunch ✨  Share your Room ID to invite others.</div></div>
+          </div>
+          <div class="chat__typing" id="typing-area"></div>
+          <div class="chat__bar">
+            <button class="attach-btn" id="attach-btn" title="Attach file">📎</button>
+            <input class="chat__inp" id="msg-inp" type="text" placeholder="Message…" autocomplete="off" maxlength="5000">
+            <button class="btn btn--primary btn--sm" id="send-btn">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="file-input" style="display:none;" multiple>
+  <a id="dl-link" style="display:none;" download></a>
+
+  <script type="module">
+    import { joinRoom, selfId } from 'https://esm.run/trystero';
+
+    // ── DOM ──
+    const Q = s => document.querySelector(s);
+    const overlay    = Q('#overlay');
+    const fRoom      = Q('#f-room');
+    const fName      = Q('#f-name');
+    const fPass      = Q('#f-pass');
+    const passEye    = Q('#pass-eye');
+    const randBtn    = Q('#rand-btn');
+    const joinBtn    = Q('#join-btn');
+    const inviteHint = Q('#invite-hint');
+    const inviteRoom = Q('#invite-room-name');
+    const appEl      = Q('#app');
+    const connDot    = Q('#conn-dot');
+    const roomLbl    = Q('#room-lbl');
+    const peerCnt    = Q('#peer-cnt');
+    const selfChip   = Q('#self-chip');
+    const inviteBtn  = Q('#invite-btn');
+    const leaveBtn   = Q('#leave-btn');
+    const peerList   = Q('#peer-list');
+    const screens    = Q('#screens');
+    const msgs       = Q('#msgs');
+    const typingArea = Q('#typing-area');
+    const msgInp     = Q('#msg-inp');
+    const sendBtn    = Q('#send-btn');
+    const attachBtn  = Q('#attach-btn');
+    const fileBtn    = Q('#file-btn');
+    const micBtn     = Q('#mic-btn');
+    const screenBtn  = Q('#screen-btn');
+    const fileInput  = Q('#file-input');
+    const dlLink     = Q('#dl-link');
+    const notifs     = Q('#notifs');
+    const dropInd    = Q('#drop-indicator');
+
+    // ── State ──
+    let room = null;
+    let myName = '';
+    let roomId = '';
+    let audioStream = null;
+    let screenStream = null;
+    let isMicOn = false;
+    let isSharing = false;
+    let audioBlocked = false;
+
+    const peerNames   = new Map(); // peerId → name
+    const peerAudio   = new Map(); // peerId → Audio
+    const screenTiles = new Map(); // `${pid}-scr` → {tile, video}
+    const fileStore   = new Map(); // transferId → {blob, name, type}
+    const fileMsgs    = new Map(); // transferId → {progressEl, barEl, btnEl, previewEl}
+    let fileCtr = 0;
+
+    // Trystero actions (set after join)
+    let sChat, sFile, sMeta, sTyping;
+
+    // Typing state
+    let typingPeers  = new Map(); // peerId → timeout
+    let myTypingTimeout = null;
+
+    // ── SAFE HELPER: Text node wrapper ──
+    function txt(str) { return document.createTextNode(String(str ?? '')); }
+    function el(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
+
+    // ── Notifications ──
+    function notify(msg, icon = '✨', type = '') {
+      const n = el('div', `notif${type ? ' notif--' + type : ''}`);
+      const ic = el('span', 'notif__icon'); ic.textContent = icon;
+      const tx = el('span', 'notif__text'); tx.textContent = msg;
+      n.append(ic, tx);
+      notifs.appendChild(n);
+      setTimeout(() => n.remove(), 3100);
+    }
+
+    // ── File type helpers ──
+    function fileIcon(type) {
+      if (!type) return '📄';
+      if (type.startsWith('image/')) return '🖼️';
+      if (type.startsWith('video/')) return '🎬';
+      if (type.startsWith('audio/')) return '🎵';
+      if (type === 'application/pdf') return '📑';
+      if (type.includes('zip') || type.includes('compressed') || type.includes('tar') || type.includes('rar')) return '🗜️';
+      if (type.startsWith('text/')) return '📝';
+      if (type.includes('word') || type.includes('document')) return '📝';
+      if (type.includes('sheet') || type.includes('excel')) return '📊';
+      if (type.includes('presentation') || type.includes('powerpoint')) return '📊';
+      return '📄';
+    }
+    function fmtSize(b) {
+      if (b < 1024) return b + ' B';
+      if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+      return (b/1048576).toFixed(1) + ' MB';
+    }
+    function isImage(t) { return t && t.startsWith('image/'); }
+    function isVideo(t) { return t && t.startsWith('video/'); }
+
+    // ── Chat Message Builder ──
+    function addMsg(text, kind, senderName = '') {
+      const div = el('div', `msg msg--${kind}`);
+      if (kind === 'me' || kind === 'them') {
+        const meta = el('span', 'msg__meta');
+        const now = new Date();
+        const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+        meta.textContent = (kind === 'me' ? 'You' : senderName || 'Peer') + '  ·  ' + time;
+        const bub = el('div', 'msg__bub');
+        bub.textContent = text;
+        div.append(meta, bub);
+      } else if (kind === 'sys') {
+        const bub = el('div', 'msg__bub');
+        bub.textContent = text;
+        div.append(bub);
+      }
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+      return div;
+    }
+
+    function addFileMsg({ name, size, type, transferId, isMine, senderName = '' }) {
+      const div = el('div', `msg msg--${isMine ? 'me' : 'them'} msg--file`);
+      const meta = el('span', 'msg__meta');
+      const now = new Date();
+      const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+      meta.textContent = (isMine ? 'You' : senderName || 'Peer') + '  ·  ' + time;
+
+      const bub = el('div', 'msg__bub msg__bub--file');
+
+      // Top row: icon + info + action button
+      const row = el('div', 'fbub__row');
+      const icon = el('span', 'fbub__icon'); icon.textContent = fileIcon(type);
+      const info = el('span', 'fbub__info');
+      const fname = el('span', 'fbub__name'); fname.textContent = name;
+      const fsize = el('span', 'fbub__size'); fsize.textContent = fmtSize(size);
+      info.append(fname, fsize);
+      const btn = el('button', 'fbub__btn');
+      btn.textContent = isMine ? 'Sending…' : 'Download';
+      row.append(icon, info, btn);
+
+      // Progress bar
+      const prog = el('div', 'fbub__progress');
+      const bar  = el('div', 'fbub__bar');
+      prog.appendChild(bar);
+
+      // Preview placeholder (filled when file is ready)
+      const preview = el('div', 'fbub__preview');
+      preview.style.display = 'none';
+
+      bub.append(row, prog, preview);
+      div.append(meta, bub);
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+
+      fileMsgs.set(transferId, { barEl: bar, btnEl: btn, previewEl: preview });
+      return div;
+    }
+
+    function showFilePreview(transferId, blob, type) {
+      const data = fileMsgs.get(transferId);
+      if (!data) return;
+      const { previewEl } = data;
+      const url = URL.createObjectURL(blob);
+      if (isImage(type)) {
+        const img = el('img');
+        img.src = url;
+        img.alt = 'Image preview';
+        img.loading = 'lazy';
+        previewEl.appendChild(img);
+        previewEl.style.display = '';
+      } else if (isVideo(type)) {
+        const vid = el('video');
+        vid.src = url;
+        vid.controls = true;
+        vid.preload = 'metadata';
+        previewEl.appendChild(vid);
+        previewEl.style.display = '';
+      }
+    }
+
+    // ── Send Chat ──
+    function sendMsg() {
+      const text = msgInp.value.trim();
+      if (!text || !sChat) return;
+      sChat({ text, n: myName });
+      addMsg(text, 'me');
+      msgInp.value = '';
+      msgInp.focus();
+      clearTypingSignal();
+    }
+    sendBtn.addEventListener('click', sendMsg);
+    msgInp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } });
+
+    // ── Typing indicator ──
+    function clearTypingSignal() {
+      if (myTypingTimeout) { clearTimeout(myTypingTimeout); myTypingTimeout = null; }
+    }
+    msgInp.addEventListener('input', () => {
+      if (!sTyping) return;
+      if (!myTypingTimeout) { sTyping({ n: myName }); }
+      clearTypingSignal();
+      myTypingTimeout = setTimeout(() => { myTypingTimeout = null; }, 2000);
+    });
+
+    function renderTyping() {
+      const names = [...typingPeers.keys()].map(pid => peerNames.get(pid) || pid.slice(0,8));
+      if (names.length === 0) { typingArea.textContent = ''; return; }
+      typingArea.textContent = names.join(', ') + (names.length === 1 ? ' is typing…' : ' are typing…');
+    }
+
+    // ── Peer List ──
+    function renderPeers() {
+      peerList.innerHTML = '';
+      const peers = room?.getPeers?.() ?? {};
+      const pids = Object.keys(peers);
+
+      // Self
+      const selfItem = buildPeerEl({ name: myName, isMe: true, hasMic: isMicOn && !!audioStream, hasScr: isSharing });
+      peerList.appendChild(selfItem);
+
+      for (const pid of pids) {
+        const item = buildPeerEl({ name: peerNames.get(pid) || pid.slice(0,8), pid, hasMic: peerAudio.has(pid), hasScr: screenTiles.has(`${pid}-scr`) });
+        peerList.appendChild(item);
+      }
+      peerCnt.textContent = pids.length;
+      connDot.classList.toggle('dot--on', pids.length > 0);
+    }
+
+    function buildPeerEl({ name, isMe = false, pid, hasMic, hasScr }) {
+      const item = el('div', 'peer');
+      const av = el('div', 'peer__av');
+      av.textContent = (name || '?')[0].toUpperCase();
+      const info = el('div', 'peer__info');
+      const nm = el('span', 'peer__name');
+      nm.textContent = name + (isMe ? ' (you)' : '');
+      const st = el('span', 'peer__status');
+      const dot = el('span', `peer__sdot ${hasMic ? 'peer__sdot--spk' : 'peer__sdot--on'}`);
+      st.append(dot, txt(hasMic ? 'mic on' : 'online'));
+      info.append(nm, st);
+      const badges = el('span', 'peer__badges');
+      if (hasScr) { const b = el('span','peer__badge'); b.textContent = '🖥️'; badges.appendChild(b); }
+      item.append(av, info, badges);
+      return item;
+    }
+
+    // ── Screen Share Tiles ──
+    function createTile(pid, label, isLocal) {
+      const key = `${pid}-scr`;
+      if (screenTiles.has(key)) return screenTiles.get(key);
+      const tile = el('div', `screen-tile${isLocal ? ' screen-tile--local' : ''}`);
+      const vid = el('video');
+      vid.autoplay = true; vid.playsInline = true; vid.muted = isLocal;
+      const lbl = el('span', 'screen-tile__lbl'); lbl.textContent = label;
+      tile.append(vid, lbl);
+      screens.appendChild(tile);
+      const entry = { tile, video: vid };
+      screenTiles.set(key, entry);
+      screens.classList.add('screens--on');
+      return entry;
+    }
+    function removeTile(pid) {
+      const key = `${pid}-scr`;
+      const e = screenTiles.get(key);
+      if (e) { e.video.srcObject?.getTracks().forEach(t=>t.stop()); e.video.srcObject = null; e.tile.remove(); screenTiles.delete(key); }
+      if (screenTiles.size === 0) screens.classList.remove('screens--on');
+    }
+
+    // ── Mic ──
+    async function toggleMic() {
+      if (!room) return;
+      if (!audioStream) {
+        try {
+          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          isMicOn = true;
+          room.addStream(audioStream, null, { t: 'audio', n: myName });
+          notify('Microphone on', '🎤', 'success');
+        } catch {
+          notify('Microphone access denied', '❌', 'error');
+          return;
+        }
+      } else {
+        const track = audioStream.getAudioTracks()[0];
+        if (track) { track.enabled = !track.enabled; isMicOn = track.enabled; }
+        notify(isMicOn ? 'Mic unmuted' : 'Mic muted', isMicOn ? '🎤' : '🔇');
+      }
+      syncMicBtn(); renderPeers();
+    }
+    function syncMicBtn() {
+      micBtn.classList.toggle('active', isMicOn && !!audioStream);
+      micBtn.classList.toggle('muted', !!audioStream && !isMicOn);
+      micBtn.textContent = (audioStream && !isMicOn) ? '🔇' : '🎤';
+    }
+    micBtn.addEventListener('click', toggleMic);
+
+    // ── Screen Share ──
+    async function toggleScreen() {
+      if (isSharing) { stopScreen(); } else { await startScreen(); }
+    }
+    async function startScreen() {
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
+        screenStream.getVideoTracks()[0].addEventListener('ended', stopScreen);
+        room.addStream(screenStream, null, { t: 'screen', n: myName });
+        isSharing = true; screenBtn.classList.add('active');
+        const e = createTile('local', '📡 Your Screen', true);
+        e.video.srcObject = screenStream; e.video.play().catch(()=>{});
+        notify('Screen sharing started', '🖥️', 'success'); renderPeers();
+      } catch { notify('Screen share denied', '❌', 'error'); }
+    }
+    function stopScreen() {
+      screenStream?.getTracks().forEach(t=>t.stop());
+      room?.removeStream(screenStream);
+      screenStream = null; isSharing = false;
+      screenBtn.classList.remove('active');
+      removeTile('local');
+      notify('Screen sharing stopped', '🖥️');
+      renderPeers();
+    }
+    screenBtn.addEventListener('click', toggleScreen);
+
+    // ── Files ──
+    async function sendFile(file) {
+      if (!sFile) return;
+      const id = `s-${++fileCtr}`;
+      addFileMsg({ name: file.name, size: file.size, type: file.type, transferId: id, isMine: true });
+      const buf = await file.arrayBuffer();
+      await sFile(buf, null, { n: file.name, t: file.type, s: file.size, id }, pct => {
+        const d = fileMsgs.get(id);
+        if (d) d.barEl.style.width = (pct*100)+'%';
+        if (pct >= 1) {
+          const d2 = fileMsgs.get(id);
+          if (d2) { d2.btnEl.textContent = 'Sent ✓'; d2.btnEl.classList.add('fbub__btn--done'); }
+          notify('Sent: ' + file.name, '📤', 'success');
+          setTimeout(() => fileMsgs.delete(id), 8000);
+        }
+      });
+    }
+    function receiveFile(buf, pid, meta) {
+      const { n: name, t: type, s: size, id } = meta;
+      const blob = new Blob([buf], { type: type || 'application/octet-stream' });
+      const tid  = id || `r-${++fileCtr}`;
+      const sender = peerNames.get(pid) || pid.slice(0,8);
+      fileStore.set(tid, { blob, name: name || 'file', type: type || '', size: size || blob.size });
+
+      const msgDiv = addFileMsg({ name: name || 'file', size: size || blob.size, type: type || '', transferId: tid, isMine: false, senderName: sender });
+      const d = fileMsgs.get(tid);
+      if (d) {
+        // Progress bar starts at 0 (will be updated by onProgress callback)
+        d.btnEl.textContent = 'Download';
+        d.btnEl.addEventListener('click', () => {
+          const f = fileStore.get(tid); if (!f) return;
+          const url = URL.createObjectURL(f.blob);
+          dlLink.href = url; dlLink.download = f.name; dlLink.click();
+          URL.revokeObjectURL(url);
+          d.btnEl.textContent = 'Downloaded ✓'; d.btnEl.classList.add('fbub__btn--done');
+          notify('Downloaded: ' + f.name, '📥', 'success');
+        });
+        // Inline preview
+        if (isImage(type) || isVideo(type)) {
+          showFilePreview(tid, blob, type);
+        }
+      }
+      notify('Received: ' + (name || 'file'), '📥');
+    }
+
+    // ── Drag & Drop ──
+    let dragCount = 0;
+    document.addEventListener('dragenter', e => { if (e.dataTransfer.types.includes('Files')) { dragCount++; dropInd.classList.add('drop-indicator--on'); } });
+    document.addEventListener('dragleave', () => { if (--dragCount <= 0) { dragCount = 0; dropInd.classList.remove('drop-indicator--on'); } });
+    document.addEventListener('dragover', e => { e.preventDefault(); });
+    document.addEventListener('drop', e => {
+      e.preventDefault(); dragCount = 0; dropInd.classList.remove('drop-indicator--on');
+      Array.from(e.dataTransfer.files).forEach(sendFile);
+    });
+
+    fileInput.addEventListener('change', () => { Array.from(fileInput.files).forEach(sendFile); fileInput.value = ''; });
+    attachBtn.addEventListener('click', () => fileInput.click());
+    fileBtn.addEventListener('click', () => fileInput.click());
+
+    // ── Keyboard Shortcuts ──
+    document.addEventListener('keydown', e => {
+      if (!room) return;
+      if (e.target === msgInp) return; // don't intercept while typing
+      if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMic(); }
+      if (e.key === 's' || e.key === 'S') { e.preventDefault(); toggleScreen(); }
+      if (e.key === 'f' || e.key === 'F') { e.preventDefault(); fileInput.click(); }
+    });
+
+    // ── Audio Autoplay ──
+    function handleAudioBlock(audioEl) {
+      if (!audioBlocked) {
+        audioBlocked = true;
+        if (!document.querySelector('.audio-btn')) {
+          const btn = el('button', 'audio-btn');
+          btn.textContent = '🔊 Enable Audio';
+          btn.onclick = () => {
+            peerAudio.forEach(a => a.play().catch(()=>{}));
+            audioBlocked = false;
+            btn.remove();
+          };
+          document.body.appendChild(btn);
+        }
+      }
+    }
+
+    // ── Invite ──
+    inviteBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        notify('Invite link copied!', '🔗', 'success');
+      } catch {
+        notify('Copy failed — share the Room ID manually', '⚠️', 'warning');
+      }
+    });
+
+    // ── Room Join ──
+    async function doJoin() {
+      const rid = fRoom.value.trim();
+      const name = fName.value.trim();
+      const pass = fPass.value.trim();
+      if (!rid)  { notify('Enter a Room ID', '⚠️', 'warning'); fRoom.focus(); return; }
+      if (!name) { notify('Enter your display name', '⚠️', 'warning'); fName.focus(); return; }
+      myName = name; roomId = rid;
+      const cfg = { appId: 'peerpunch-v4-2026' };
+      if (pass) cfg.password = pass;
+      try { room = joinRoom(cfg, rid); } catch(e) {
+        notify('Failed to connect', '❌', 'error'); return;
+      }
+
+      // Actions
+      const [sc, gc] = room.makeAction('chat');
+      sChat = sc;
+      gc((data, pid) => {
+        if (data?.text) addMsg(data.text, 'them', peerNames.get(pid) || pid.slice(0,8));
+      });
+
+      const [sm, gm] = room.makeAction('meta');
+      sMeta = sm;
+      gm((data, pid) => { if (data?.n) { peerNames.set(pid, data.n); renderPeers(); } });
+
+      // File actions (including progress receiver)
+      const [sf, gf, ofp] = room.makeAction('file');
+      sFile = sf;
+      gf((buf, pid, meta) => receiveFile(buf, pid, meta));
+      if (ofp) {
+        ofp((percent, pid, meta) => {
+          const tid = meta?.id;
+          if (tid && fileMsgs.has(tid)) {
+            const d = fileMsgs.get(tid);
+            if (d && d.barEl) d.barEl.style.width = (percent * 100) + '%';
+            if (percent >= 1 && d && d.btnEl && d.btnEl.textContent === 'Download') {
+              d.btnEl.textContent = 'Download ✓';
+              d.btnEl.classList.add('fbub__btn--done');
+            }
+          }
+        });
+      }
+
+      const [st, gt] = room.makeAction('typing');
+      sTyping = st;
+      gt((data, pid) => {
+        if (typingPeers.has(pid)) clearTimeout(typingPeers.get(pid));
+        const t = setTimeout(() => { typingPeers.delete(pid); renderTyping(); }, 3000);
+        typingPeers.set(pid, t);
+        renderTyping();
+      });
+
+      // Peer events
+      room.onPeerJoin(pid => {
+        renderPeers(); renderTyping();
+        sMeta({ n: myName }, pid);
+        if (audioStream && isMicOn) room.addStream(audioStream, pid, { t: 'audio', n: myName });
+        if (screenStream && isSharing) room.addStream(screenStream, pid, { t: 'screen', n: myName });
+        setTimeout(() => {
+          const who = peerNames.get(pid) || pid.slice(0,8);
+          notify(who + ' joined', '👋');
+        }, 400);
+      });
+
+      room.onPeerLeave(pid => {
+        const who = peerNames.get(pid) || pid.slice(0,8);
+        notify(who + ' left', '👋');
+        addMsg(who + ' left the room', 'sys');
+        const a = peerAudio.get(pid);
+        if (a) { a.srcObject = null; a.remove(); peerAudio.delete(pid); }
+        removeTile(pid);
+        peerNames.delete(pid);
+        typingPeers.delete(pid);
+        renderPeers(); renderTyping();
+      });
+
+      room.onPeerStream((stream, pid, meta) => {
+        const type = meta?.t || 'audio';
+        const name = meta?.n || peerNames.get(pid) || pid.slice(0,8);
+        if (meta?.n) peerNames.set(pid, meta.n);
+        if (type === 'screen') {
+          const e = createTile(pid, name + ' · Screen', false);
+          e.video.srcObject = stream; e.video.play().catch(()=>{});
+        } else {
+          let a = peerAudio.get(pid);
+          if (!a) { a = new Audio(); a.autoplay = true; document.body.appendChild(a); peerAudio.set(pid, a); }
+          a.srcObject = stream;
+          a.play().catch(() => handleAudioBlock(a));
+        }
+        renderPeers();
+      });
+
+      // UI switchover
+      roomLbl.textContent = rid;
+      selfChip.textContent = 'You: ' + selfId.slice(0,10) + '…';
+      selfChip.style.display = '';
+      overlay.classList.add('overlay--hidden');
+      appEl.style.display = '';
+      sMeta({ n: myName });
+      addMsg('You joined as "' + myName + '"', 'sys');
+      notify('Joined room: ' + rid, '✨', 'success');
+      window.location.hash = rid;
+      renderPeers();
+      msgInp.focus();
+    }
+
+    function leaveRoom() {
+      if (audioStream) { room?.removeStream(audioStream); audioStream.getTracks().forEach(t=>t.stop()); audioStream = null; }
+      if (screenStream) { room?.removeStream(screenStream); screenStream.getTracks().forEach(t=>t.stop()); screenStream = null; isSharing = false; }
+      room?.leave(); room = null;
+      peerAudio.forEach((a) => { a.srcObject = null; a.remove(); }); peerAudio.clear();
+      screenTiles.forEach(e => e.tile.remove()); screenTiles.clear();
+      screens.classList.remove('screens--on');
+      peerNames.clear(); typingPeers.clear(); fileStore.clear(); fileMsgs.clear();
+      sChat = sFile = sMeta = sTyping = null;
+      isMicOn = false; isSharing = false;
+      syncMicBtn(); screenBtn.classList.remove('active');
+      msgs.innerHTML = '<div class="msg msg--sys"><div class="msg__bub">Welcome to PeerPunch ✨  Share your Room ID to invite others.</div></div>';
+      typingArea.textContent = '';
+      peerCnt.textContent = '0';
+      connDot.classList.remove('dot--on');
+      selfChip.style.display = 'none';
+      appEl.style.display = 'none';
+      overlay.classList.remove('overlay--hidden');
+      window.location.hash = '';
+      notify('You left the room', '🚪');
+      document.querySelector('.audio-btn')?.remove();
+      audioBlocked = false;
+    }
+
+    // ── UI Events ──
+    joinBtn.addEventListener('click', doJoin);
+    leaveBtn.addEventListener('click', leaveRoom);
+    fRoom.addEventListener('keydown', e => { if (e.key === 'Enter') fName.focus(); });
+    fName.addEventListener('keydown', e => { if (e.key === 'Enter') fPass.focus(); });
+    fPass.addEventListener('keydown', e => { if (e.key === 'Enter') doJoin(); });
+
+    passEye.addEventListener('click', () => {
+      fPass.type = fPass.type === 'password' ? 'text' : 'password';
+      passEye.textContent = fPass.type === 'password' ? '👁️' : '🙈';
+    });
+
+    const adj   = ['silent','cosmic','lunar','golden','crimson','azure','onyx','neon','jade','frost','smoke','amber'];
+    const nouns = ['lobby','room','hub','den','vault','lounge','nexus','grid','node','zone','base','arena'];
+    function randRoom() {
+      return adj[Math.floor(Math.random()*adj.length)] + '-' + nouns[Math.floor(Math.random()*nouns.length)] + '-' + Math.floor(Math.random()*900+100);
+    }
+    randBtn.addEventListener('click', () => { fRoom.value = randRoom(); });
+
+    // URL Hash
+    function checkHash() {
+      const hash = window.location.hash.slice(1).trim();
+      if (hash) {
+        fRoom.value = hash;
+        inviteRoom.textContent = hash;
+        inviteHint.style.display = '';
+      } else if (!fRoom.value) {
+        fRoom.value = randRoom();
+      }
+    }
+    checkHash();
+    window.addEventListener('hashchange', () => {
+      const hash = window.location.hash.slice(1).trim();
+      if (hash && hash !== roomId) fRoom.value = hash;
+    });
+
+    // Periodic refresh
+    setInterval(() => { if (room) renderPeers(); }, 5000);
+
+    // Init
+    syncMicBtn(); renderPeers();
+
+    console.log('%c🥊 PeerPunch v4', 'color:#00F0C0;font-size:1.3em;font-weight:800;');
+    console.log('%cYour Peer ID: %c' + selfId, 'color:#5E7095;', 'color:#00F0C0;');
+  </script>
+</body>
+</html>
