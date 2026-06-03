@@ -1012,31 +1012,56 @@
       }
     });
 
-    // ── Room Join ──
     async function doJoin() {
       const rid = fRoom.value.trim();
       const name = fName.value.trim();
       const pass = fPass.value.trim();
+      
       if (!rid)  { notify('Enter a Room ID', '⚠️', 'warning'); fRoom.focus(); return; }
       if (!name) { notify('Enter your display name', '⚠️', 'warning'); fName.focus(); return; }
-      myName = name; roomId = rid;
-      const cfg = { appId: 'peerpunch-v4-2026' };
+      
+      myName = name; 
+      roomId = rid;
+      
+      // 1. Add reliable fallback relays to spread the signaling load
+      const cfg = { 
+        appId: 'peerpunch-v4-2026',
+        relayUrls: [
+          'wss://relay.damus.io',
+          'wss://relay.primal.net',
+          'wss://nos.lol',
+          'wss://relay.snort.social'
+        ]
+      };
+      
       if (pass) cfg.password = pass;
-      try { room = joinRoom(cfg, rid); } catch(e) {
-        notify('Failed to connect', '❌', 'error'); return;
+      
+      try { 
+        room = joinRoom(cfg, rid); 
+      } catch(e) {
+        notify('Failed to connect', '❌', 'error'); 
+        return;
       }
-
+    
+      // 2. Safeguard the action creation
+      const chatAction = room.makeAction('chat');
+      if (!Array.isArray(chatAction)) {
+        notify('Signaling server error. Try again.', '🔌', 'error');
+        leaveRoom();
+        return;
+      }
+    
       // Actions
-      const [sc, gc] = room.makeAction('chat');
+      const [sc, gc] = chatAction;
       sChat = sc;
       gc((data, pid) => {
         if (data?.text) addMsg(data.text, 'them', peerNames.get(pid) || pid.slice(0,8));
       });
-
+    
       const [sm, gm] = room.makeAction('meta');
       sMeta = sm;
       gm((data, pid) => { if (data?.n) { peerNames.set(pid, data.n); renderPeers(); } });
-
+    
       // File actions (including progress receiver)
       const [sf, gf, ofp] = room.makeAction('file');
       sFile = sf;
@@ -1054,7 +1079,7 @@
           }
         });
       }
-
+    
       const [st, gt] = room.makeAction('typing');
       sTyping = st;
       gt((data, pid) => {
@@ -1063,7 +1088,7 @@
         typingPeers.set(pid, t);
         renderTyping();
       });
-
+    
       // Peer events
       room.onPeerJoin(pid => {
         renderPeers(); renderTyping();
@@ -1075,7 +1100,7 @@
           notify(who + ' joined', '👋');
         }, 400);
       });
-
+    
       room.onPeerLeave(pid => {
         const who = peerNames.get(pid) || pid.slice(0,8);
         notify(who + ' left', '👋');
@@ -1087,7 +1112,7 @@
         typingPeers.delete(pid);
         renderPeers(); renderTyping();
       });
-
+    
       room.onPeerStream((stream, pid, meta) => {
         const type = meta?.t || 'audio';
         const name = meta?.n || peerNames.get(pid) || pid.slice(0,8);
@@ -1103,7 +1128,7 @@
         }
         renderPeers();
       });
-
+    
       // UI switchover
       roomLbl.textContent = rid;
       selfChip.textContent = 'You: ' + selfId.slice(0,10) + '…';
