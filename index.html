@@ -660,7 +660,7 @@
     let sChat, sFile, sMeta, sTyping;
 
     function createObjectUrl(blob) {
-      const url = createObjectUrl(blob);
+      const url = URL.createObjectURL(blob);
       objectUrls.add(url);
       return url;
     }
@@ -775,7 +775,7 @@
       const data = fileMsgs.get(transferId);
       if (!data) return;
       const { previewEl } = data;
-      const url = URL.createObjectURL(blob);
+      const url = createObjectUrl(blob);
       if (isImage(type)) {
         const img = el('img');
         img.src = url;
@@ -994,7 +994,7 @@
         console.error('PeerPunch file send failed:', error);
         const data = fileMsgs.get(id);
         if (data) {
-          data.btnEl.textContent = 'Failed — retry';
+          data.btnEl.textContent = 'Failed';
           data.btnEl.classList.remove('fbub__btn--done');
         }
         notify('Could not send ' + file.name + '. Check the peer connection.', '❌', 'error');
