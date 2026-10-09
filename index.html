@@ -1046,9 +1046,12 @@
       const sender = peerNames.get(pid) || pid.slice(0, 8);
       fileStore.set(tid, { blob, name, type, size });
 
-      addFileMsg({ name, size, type, transferId: tid, isMine: false, senderName: sender });
+      if (!fileMsgs.has(tid)) {
+        addFileMsg({ name, size, type, transferId: tid, isMine: false, senderName: sender });
+      }
       const data = fileMsgs.get(tid);
       if (data) {
+        data.btnEl.disabled = false;
         data.btnEl.textContent = 'Download';
         data.btnEl.addEventListener('click', () => {
           const file = fileStore.get(tid);
@@ -1188,11 +1191,33 @@
           onMessage: (buf, context) => receiveFile(buf, context?.peerId, context?.metadata),
           onReceiveProgress: (percent, context) => {
             const metadata = context?.metadata;
-            const tid = metadata?.id;
-            if (tid && fileMsgs.has(tid)) {
-              const data = fileMsgs.get(tid);
-              if (data?.barEl) data.barEl.style.width = (percent * 100) + '%';
+            const peerId = context?.peerId;
+            const transferId = typeof metadata?.id === 'string' ? metadata.id : '';
+            if (!peerId || !transferId) return;
+
+            const tid = 'r-' + peerId + '-' + transferId.slice(0, 200);
+            if (!fileMsgs.has(tid)) {
+              const name = typeof metadata.n === 'string' ? metadata.n.slice(0, 255) : 'Incoming file';
+              const type = typeof metadata.t === 'string' ? metadata.t.slice(0, 127) : '';
+              const declaredSize = Number(metadata.s);
+              const size = Number.isFinite(declaredSize) && declaredSize >= 0 ? declaredSize : 0;
+              addFileMsg({
+                name,
+                size,
+                type,
+                transferId: tid,
+                isMine: false,
+                senderName: peerNames.get(peerId) || peerId.slice(0, 8)
+              });
+              const pending = fileMsgs.get(tid);
+              if (pending) {
+                pending.btnEl.disabled = true;
+                pending.btnEl.textContent = 'Receiving…';
+              }
             }
+
+            const data = fileMsgs.get(tid);
+            if (data?.barEl) data.barEl.style.width = (percent * 100) + '%';
           }
         });
         sFile = fileAction;
