@@ -143,6 +143,8 @@
       background: var(--t4); transition: all 0.4s var(--ease); flex-shrink: 0;
     }
     .dot--on { background: var(--acc); box-shadow: 0 0 10px var(--acc-glow); }
+    .dot--waiting { background: var(--warn); box-shadow: 0 0 10px rgba(255,184,48,0.35); }
+    .dot--offline { background: var(--danger); box-shadow: 0 0 10px rgba(255,67,101,0.35); }
     .topbar__meta {
       display: flex; align-items: center; gap: 16px;
       font-family: var(--fm); font-size: 0.65rem;
@@ -601,7 +603,7 @@
   <a id="dl-link" style="display:none;" download></a>
 
   <script type="module">
-    import { joinRoom, selfId } from 'https://esm.run/trystero@0.26.0';
+    import { joinRoom, selfId, getRelaySockets } from 'https://esm.run/trystero@0.26.0';
 
     // ── DOM ──
     const Q = s => document.querySelector(s);
@@ -841,7 +843,32 @@
         peerList.appendChild(item);
       }
       peerCnt.textContent = pids.length;
-      connDot.classList.toggle('dot--on', pids.length > 0);
+      updateConnectionStatus(pids.length);
+    }
+
+    function updateConnectionStatus(peerCount) {
+      const inRoom = Boolean(room);
+      let relayOpen = false;
+      if (inRoom) {
+        try {
+          relayOpen = Object.values(getRelaySockets()).some(
+            socket => socket && socket.readyState === WebSocket.OPEN
+          );
+        } catch (error) {
+          console.debug('PeerPunch could not inspect relay status:', error);
+        }
+      }
+
+      connDot.classList.toggle('dot--on', inRoom && peerCount > 0);
+      connDot.classList.toggle('dot--waiting', inRoom && peerCount === 0 && relayOpen);
+      connDot.classList.toggle('dot--offline', inRoom && peerCount === 0 && !relayOpen);
+      connDot.title = !inRoom
+        ? 'Not connected to a room'
+        : peerCount > 0
+          ? 'Connected to ' + peerCount + ' peer' + (peerCount === 1 ? '' : 's')
+          : relayOpen
+            ? 'Room open; signaling is online, waiting for peers'
+            : 'Room open; signaling relays are reconnecting or unavailable';
     }
 
     function buildPeerEl({ name, isMe = false, pid, hasMic, hasScr }) {
