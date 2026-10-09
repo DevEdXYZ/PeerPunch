@@ -17,6 +17,7 @@ PeerPunch is intentionally small: the entire application lives in [`index.html`]
 - **File transfer** — send one or more files with progress, download buttons, and inline previews for images and videos.
 - **Invite links** — the current room ID is stored in the URL hash so links can prefill the join form.
 - **Keyboard shortcuts** — `M` toggles microphone, `S` toggles screen sharing, and `F` opens the file picker.
+- **Connection diagnostics** — the status dot distinguishes an active peer connection, available signaling with no peers yet, and relays that are reconnecting or unavailable.
 
 ## Quick start
 
@@ -39,7 +40,7 @@ python3 -m http.server 8080
 
 Then open <http://localhost:8080>.
 
-No dependencies need to be installed locally. The page imports Trystero from `https://esm.run/trystero` and loads Google Fonts at runtime.
+No dependencies need to be installed locally. The page imports the pinned Trystero `0.26.0` release from `https://esm.run/trystero@0.26.0` and loads Google Fonts at runtime. Pinning avoids unexpected breaking API changes from an unversioned CDN import.
 
 ## Browser requirements
 
@@ -50,7 +51,7 @@ PeerPunch depends on modern browser APIs:
 | Peer connections | WebRTC via Trystero | Requires a network path that WebRTC can traverse. Some restrictive NAT/firewall setups may fail without TURN infrastructure. |
 | Microphone | `navigator.mediaDevices.getUserMedia()` | Requires user permission and a secure context, except on localhost. |
 | Screen sharing | `navigator.mediaDevices.getDisplayMedia()` | Requires user permission and a browser that supports display capture. |
-| File sending | File API + WebRTC data channels | Files are read into memory before sending. Avoid very large files on low-memory devices. |
+| File sending | File API + WebRTC data channels | Files are read into memory before sending. Transfers are limited to 100 MiB per file to reduce memory pressure. |
 | Invite copy | Clipboard API | Falls back to telling users to share the room ID manually if clipboard access is denied. |
 
 ## How it works
@@ -66,9 +67,9 @@ PeerPunch depends on modern browser APIs:
 ### Connection flow
 
 1. The user enters a room ID and display name.
-2. `doJoin()` builds a Trystero config with `appId: 'peerpunch-v4-2026'` and adds `password` only when the password field is non-empty.
-3. `joinRoom(config, roomId)` creates or joins the WebRTC room.
-4. PeerPunch registers four Trystero actions:
+2. `doJoin()` builds a Trystero config with `appId: 'peerpunch-v4-2026'`, uses Trystero's maintained default Nostr relays with redundancy, and adds `password` only when the password field is non-empty.
+3. `joinRoom(config, roomId, callbacks)` creates or joins the WebRTC room and reports peer-connection errors.
+4. PeerPunch registers four Trystero message actions:
    - `chat` for text messages
    - `meta` for display-name exchange
    - `file` for file payloads and progress callbacks
@@ -105,7 +106,7 @@ Important details:
 - **No message history.** Late joiners only see messages sent after they join.
 - **No identity verification.** Display names are self-reported and can be duplicated or impersonated.
 - **No moderation or access control beyond the shared room ID/password.** Use high-entropy room names and a password for sensitive sessions.
-- **Large files are memory-heavy.** The current implementation reads each file into an `ArrayBuffer` before sending.
+- **Large files are memory-heavy.** The current implementation reads each file into an `ArrayBuffer` before sending, and currently limits each transfer to 100 MiB.
 - **External runtime dependencies are loaded from CDNs.** The app imports Trystero through `esm.run` and fonts through Google Fonts.
 
 ## Project structure

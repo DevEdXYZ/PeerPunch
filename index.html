@@ -143,6 +143,8 @@
       background: var(--t4); transition: all 0.4s var(--ease); flex-shrink: 0;
     }
     .dot--on { background: var(--acc); box-shadow: 0 0 10px var(--acc-glow); }
+    .dot--waiting { background: var(--warn); box-shadow: 0 0 10px rgba(255,184,48,0.35); }
+    .dot--offline { background: var(--danger); box-shadow: 0 0 10px rgba(255,67,101,0.35); }
     .topbar__meta {
       display: flex; align-items: center; gap: 16px;
       font-family: var(--fm); font-size: 0.65rem;
@@ -601,7 +603,7 @@
   <a id="dl-link" style="display:none;" download></a>
 
   <script type="module">
-    import { joinRoom, selfId } from 'https://esm.run/trystero';
+    import { joinRoom, selfId, getRelaySockets } from 'https://esm.run/trystero@0.26.0';
 
     // ── DOM ──
     const Q = s => document.querySelector(s);
@@ -651,10 +653,26 @@
     const screenTiles = new Map(); // `${pid}-scr` → {tile, video}
     const fileStore   = new Map(); // transferId → {blob, name, type}
     const fileMsgs    = new Map(); // transferId → {progressEl, barEl, btnEl, previewEl}
+    const objectUrls  = new Set();
+    const MAX_FILE_BYTES = 100 * 1024 * 1024;
     let fileCtr = 0;
+    let isJoining = false;
 
     // Trystero actions (set after join)
     let sChat, sFile, sMeta, sTyping;
+
+    function createObjectUrl(blob) {
+      const url = URL.createObjectURL(blob);
+      objectUrls.add(url);
+      return url;
+    }
+    function releaseObjectUrl(url) {
+      if (objectUrls.delete(url)) URL.revokeObjectURL(url);
+    }
+    function releaseAllObjectUrls() {
+      objectUrls.forEach(url => URL.revokeObjectURL(url));
+      objectUrls.clear();
+    }
 
     // Typing state
     let typingPeers  = new Map(); // peerId → timeout
@@ -759,7 +777,7 @@
       const data = fileMsgs.get(transferId);
       if (!data) return;
       const { previewEl } = data;
-      const url = URL.createObjectURL(blob);
+      const url = createObjectUrl(blob);
       if (isImage(type)) {
         const img = el('img');
         img.src = url;
@@ -781,7 +799,10 @@
     function sendMsg() {
       const text = msgInp.value.trim();
       if (!text || !sChat) return;
-      sChat({ text, n: myName });
+      void sChat.send({ text, n: myName }).catch(error => {
+        console.error('PeerPunch message send failed:', error);
+        notify('Message could not be sent. Check the connection.', '⚠️', 'error');
+      });
       addMsg(text, 'me');
       msgInp.value = '';
       msgInp.focus();
@@ -796,7 +817,7 @@
     }
     msgInp.addEventListener('input', () => {
       if (!sTyping) return;
-      if (!myTypingTimeout) { sTyping({ n: myName }); }
+      if (!myTypingTimeout) { void sTyping.send({ n: myName }).catch(() => {}); }
       clearTypingSignal();
       myTypingTimeout = setTimeout(() => { myTypingTimeout = null; }, 2000);
     });
@@ -822,7 +843,32 @@
         peerList.appendChild(item);
       }
       peerCnt.textContent = pids.length;
-      connDot.classList.toggle('dot--on', pids.length > 0);
+      updateConnectionStatus(pids.length);
+    }
+
+    function updateConnectionStatus(peerCount) {
+      const inRoom = Boolean(room);
+      let relayOpen = false;
+      if (inRoom) {
+        try {
+          relayOpen = Object.values(getRelaySockets()).some(
+            socket => socket && socket.readyState === WebSocket.OPEN
+          );
+        } catch (error) {
+          console.debug('PeerPunch could not inspect relay status:', error);
+        }
+      }
+
+      connDot.classList.toggle('dot--on', inRoom && peerCount > 0);
+      connDot.classList.toggle('dot--waiting', inRoom && peerCount === 0 && relayOpen);
+      connDot.classList.toggle('dot--offline', inRoom && peerCount === 0 && !relayOpen);
+      connDot.title = !inRoom
+        ? 'Not connected to a room'
+        : peerCount > 0
+          ? 'Connected to ' + peerCount + ' peer' + (peerCount === 1 ? '' : 's')
+          : relayOpen
+            ? 'Room open; signaling is online, waiting for peers'
+            : 'Room open; signaling relays are reconnecting or unavailable';
     }
 
     function buildPeerEl({ name, isMe = false, pid, hasMic, hasScr }) {
@@ -866,15 +912,22 @@
 
     // ── Mic ──
     async function toggleMic() {
-      if (!room) return;
+      const activeRoom = room;
+      if (!activeRoom) return;
       if (!audioStream) {
         try {
-          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          if (room !== activeRoom) {
+            stream.getTracks().forEach(track => track.stop());
+            return;
+          }
+          audioStream = stream;
           isMicOn = true;
-          room.addStream(audioStream, null, { t: 'audio', n: myName });
+          activeRoom.addStream(audioStream, { metadata: { t: 'audio', n: myName } });
           notify('Microphone on', '🎤', 'success');
-        } catch {
-          notify('Microphone access denied', '❌', 'error');
+        } catch (error) {
+          console.error('PeerPunch microphone error:', error);
+          notify('Microphone unavailable. Check browser permission and HTTPS.', '❌', 'error');
           return;
         }
       } else {
@@ -893,22 +946,39 @@
 
     // ── Screen Share ──
     async function toggleScreen() {
+      if (!room) return;
       if (isSharing) { stopScreen(); } else { await startScreen(); }
     }
     async function startScreen() {
+      const activeRoom = room;
+      if (!activeRoom) return;
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        notify('Screen sharing is not supported by this browser.', '⚠️', 'warning');
+        return;
+      }
       try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
-        screenStream.getVideoTracks()[0].addEventListener('ended', stopScreen);
-        room.addStream(screenStream, null, { t: 'screen', n: myName });
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
+        if (room !== activeRoom) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        screenStream = stream;
+        screenStream.getVideoTracks()[0]?.addEventListener('ended', stopScreen);
+        activeRoom.addStream(screenStream, { metadata: { t: 'screen', n: myName } });
         isSharing = true; screenBtn.classList.add('active');
         const e = createTile('local', '📡 Your Screen', true);
-        e.video.srcObject = screenStream; e.video.play().catch(()=>{});
+        e.video.srcObject = screenStream; e.video.play().catch(() => {});
         notify('Screen sharing started', '🖥️', 'success'); renderPeers();
-      } catch { notify('Screen share denied', '❌', 'error'); }
+      } catch (error) {
+        console.error('PeerPunch screen sharing error:', error);
+        notify('Screen sharing was cancelled or blocked.', '❌', 'error');
+      }
     }
     function stopScreen() {
-      screenStream?.getTracks().forEach(t=>t.stop());
-      room?.removeStream(screenStream);
+      if (screenStream) {
+        room?.removeStream(screenStream);
+        screenStream.getTracks().forEach(track => track.stop());
+      }
       screenStream = null; isSharing = false;
       screenBtn.classList.remove('active');
       removeTile('local');
@@ -917,49 +987,86 @@
     }
     screenBtn.addEventListener('click', toggleScreen);
 
-    // ── Files ──
+        // ── Files ──
     async function sendFile(file) {
-      if (!sFile) return;
-      const id = `s-${++fileCtr}`;
-      addFileMsg({ name: file.name, size: file.size, type: file.type, transferId: id, isMine: true });
-      const buf = await file.arrayBuffer();
-      await sFile(buf, null, { n: file.name, t: file.type, s: file.size, id }, pct => {
-        const d = fileMsgs.get(id);
-        if (d) d.barEl.style.width = (pct*100)+'%';
-        if (pct >= 1) {
-          const d2 = fileMsgs.get(id);
-          if (d2) { d2.btnEl.textContent = 'Sent ✓'; d2.btnEl.classList.add('fbub__btn--done'); }
-          notify('Sent: ' + file.name, '📤', 'success');
-          setTimeout(() => fileMsgs.delete(id), 8000);
-        }
-      });
-    }
-    function receiveFile(buf, pid, meta) {
-      const { n: name, t: type, s: size, id } = meta;
-      const blob = new Blob([buf], { type: type || 'application/octet-stream' });
-      const tid  = id || `r-${++fileCtr}`;
-      const sender = peerNames.get(pid) || pid.slice(0,8);
-      fileStore.set(tid, { blob, name: name || 'file', type: type || '', size: size || blob.size });
-
-      const msgDiv = addFileMsg({ name: name || 'file', size: size || blob.size, type: type || '', transferId: tid, isMine: false, senderName: sender });
-      const d = fileMsgs.get(tid);
-      if (d) {
-        // Progress bar starts at 0 (will be updated by onProgress callback)
-        d.btnEl.textContent = 'Download';
-        d.btnEl.addEventListener('click', () => {
-          const f = fileStore.get(tid); if (!f) return;
-          const url = URL.createObjectURL(f.blob);
-          dlLink.href = url; dlLink.download = f.name; dlLink.click();
-          URL.revokeObjectURL(url);
-          d.btnEl.textContent = 'Downloaded ✓'; d.btnEl.classList.add('fbub__btn--done');
-          notify('Downloaded: ' + f.name, '📥', 'success');
-        });
-        // Inline preview
-        if (isImage(type) || isVideo(type)) {
-          showFilePreview(tid, blob, type);
-        }
+      if (!sFile || !room) {
+        notify('Join a room before sending files.', '⚠️', 'warning');
+        return;
       }
-      notify('Received: ' + (name || 'file'), '📥');
+      if (file.size > MAX_FILE_BYTES) {
+        notify('Files must be 100 MB or smaller.', '⚠️', 'warning');
+        return;
+      }
+
+      const id = 's-' + selfId + '-' + (++fileCtr);
+      addFileMsg({ name: file.name, size: file.size, type: file.type, transferId: id, isMine: true });
+      try {
+        const buf = await file.arrayBuffer();
+        await sFile.send(buf, {
+          metadata: { n: file.name.slice(0, 255), t: file.type, s: file.size, id },
+          onProgress: percent => {
+            const data = fileMsgs.get(id);
+            if (data) data.barEl.style.width = (percent * 100) + '%';
+          }
+        });
+        const data = fileMsgs.get(id);
+        if (data) {
+          data.barEl.style.width = '100%';
+          data.btnEl.textContent = 'Sent ✓';
+          data.btnEl.classList.add('fbub__btn--done');
+        }
+        notify('File sent to connected peers: ' + file.name, '📤', 'success');
+        setTimeout(() => fileMsgs.delete(id), 8000);
+      } catch (error) {
+        console.error('PeerPunch file send failed:', error);
+        const data = fileMsgs.get(id);
+        if (data) {
+          data.btnEl.textContent = 'Failed';
+          data.btnEl.classList.remove('fbub__btn--done');
+        }
+        notify('Could not send ' + file.name + '. Check the peer connection.', '❌', 'error');
+      }
+    }
+
+    function receiveFile(buf, pid, meta = {}) {
+      if (!pid || !buf) return;
+      const metadata = meta && typeof meta === 'object' ? meta : {};
+      const rawName = typeof metadata.n === 'string' ? metadata.n : 'file';
+      const name = rawName.replaceAll('/', '_').replaceAll(String.fromCharCode(92), '_').slice(0, 255) || 'file';
+      const type = typeof metadata.t === 'string' ? metadata.t.slice(0, 127) : '';
+      const declaredSize = Number(metadata.s);
+      const size = Number.isFinite(declaredSize) && declaredSize >= 0 ? declaredSize : (buf.byteLength || 0);
+      if (size > MAX_FILE_BYTES || (buf.byteLength || 0) > MAX_FILE_BYTES) {
+        notify('Rejected an oversized file from ' + (peerNames.get(pid) || 'a peer') + '.', '⚠️', 'warning');
+        return;
+      }
+      const id = typeof metadata.id === 'string' ? metadata.id.slice(0, 200) : '';
+      const blob = new Blob([buf], { type: type || 'application/octet-stream' });
+      const tid = 'r-' + pid + '-' + (id || (++fileCtr));
+      const sender = peerNames.get(pid) || pid.slice(0, 8);
+      fileStore.set(tid, { blob, name, type, size });
+
+      if (!fileMsgs.has(tid)) {
+        addFileMsg({ name, size, type, transferId: tid, isMine: false, senderName: sender });
+      }
+      const data = fileMsgs.get(tid);
+      if (data) {
+        data.btnEl.disabled = false;
+        data.btnEl.textContent = 'Download';
+        data.btnEl.addEventListener('click', () => {
+          const file = fileStore.get(tid);
+          if (!file) return;
+          const url = createObjectUrl(file.blob);
+          dlLink.href = url; dlLink.download = file.name; dlLink.click();
+          data.btnEl.textContent = 'Downloaded ✓';
+          data.btnEl.classList.add('fbub__btn--done');
+          notify('Downloaded: ' + file.name, '📥', 'success');
+          // Keep the URL alive long enough for the browser to start the download.
+          setTimeout(() => releaseObjectUrl(url), 60000);
+        });
+        if (isImage(type) || isVideo(type)) showFilePreview(tid, blob, type);
+      }
+      notify('Received: ' + name, '📥');
     }
 
     // ── Drag & Drop ──
@@ -1013,144 +1120,211 @@
     });
 
     async function doJoin() {
+      if (isJoining || room) return;
+
       const rid = fRoom.value.trim();
       const name = fName.value.trim();
-      const pass = fPass.value.trim();
-      
-      if (!rid)  { notify('Enter a Room ID', '⚠️', 'warning'); fRoom.focus(); return; }
+      const pass = fPass.value;
+      if (!rid) { notify('Enter a Room ID', '⚠️', 'warning'); fRoom.focus(); return; }
       if (!name) { notify('Enter your display name', '⚠️', 'warning'); fName.focus(); return; }
-      
-      myName = name; 
+
+      isJoining = true;
+      joinBtn.disabled = true;
+      joinBtn.setAttribute('aria-busy', 'true');
+      const originalButtonText = joinBtn.textContent;
+      joinBtn.textContent = 'Connecting…';
+      myName = name;
       roomId = rid;
-      
-      // 1. Add reliable fallback relays to spread the signaling load
-      const cfg = { 
+
+      const cfg = {
         appId: 'peerpunch-v4-2026',
-        relayUrls: [
-          'wss://relay.damus.io',
-          'wss://relay.primal.net',
-          'wss://nos.lol',
-          'wss://relay.snort.social'
-        ]
+        maxReceiveBytes: MAX_FILE_BYTES,
+        // Let Trystero maintain its relay list; hard-coded public relays can go stale.
+        relayConfig: { redundancy: 5 }
       };
-      
-      if (pass) cfg.password = pass;
-      
-      try { 
-        room = joinRoom(cfg, rid); 
-      } catch(e) {
-        notify('Failed to connect', '❌', 'error'); 
-        return;
-      }
-    
-      // 2. Safeguard the action creation
-      const chatAction = room.makeAction('chat');
-      if (!Array.isArray(chatAction)) {
-        notify('Signaling server error. Try again.', '🔌', 'error');
-        leaveRoom();
-        return;
-      }
-    
-      // Actions
-      const [sc, gc] = chatAction;
-      sChat = sc;
-      gc((data, pid) => {
-        if (data?.text) addMsg(data.text, 'them', peerNames.get(pid) || pid.slice(0,8));
-      });
-    
-      const [sm, gm] = room.makeAction('meta');
-      sMeta = sm;
-      gm((data, pid) => { if (data?.n) { peerNames.set(pid, data.n); renderPeers(); } });
-    
-      // File actions (including progress receiver)
-      const [sf, gf, ofp] = room.makeAction('file');
-      sFile = sf;
-      gf((buf, pid, meta) => receiveFile(buf, pid, meta));
-      if (ofp) {
-        ofp((percent, pid, meta) => {
-          const tid = meta?.id;
-          if (tid && fileMsgs.has(tid)) {
-            const d = fileMsgs.get(tid);
-            if (d && d.barEl) d.barEl.style.width = (percent * 100) + '%';
-            if (percent >= 1 && d && d.btnEl && d.btnEl.textContent === 'Download') {
-              d.btnEl.textContent = 'Download ✓';
-              d.btnEl.classList.add('fbub__btn--done');
+      if (pass.length > 0) cfg.password = pass;
+
+      try {
+        room = joinRoom(cfg, rid, {
+          onJoinError: details => {
+            if (!room || roomId !== rid) return;
+            console.warn('PeerPunch peer connection issue:', details);
+            const reason = typeof details?.error === 'string' ? details.error : '';
+            notify(
+              reason ? 'Peer connection issue: ' + reason : 'A peer could not connect. A restrictive network may require TURN.',
+              '🔌',
+              'warning'
+            );
+          }
+        });
+
+        const activeRoom = room;
+        const chatAction = activeRoom.makeAction('chat', {
+          onMessage: (data, context) => {
+            const peerId = context?.peerId;
+            if (typeof data?.text === 'string' && peerId) {
+              addMsg(data.text.slice(0, 5000), 'them', peerNames.get(peerId) || peerId.slice(0, 8));
             }
           }
         });
-      }
-    
-      const [st, gt] = room.makeAction('typing');
-      sTyping = st;
-      gt((data, pid) => {
-        if (typingPeers.has(pid)) clearTimeout(typingPeers.get(pid));
-        const t = setTimeout(() => { typingPeers.delete(pid); renderTyping(); }, 3000);
-        typingPeers.set(pid, t);
-        renderTyping();
-      });
-    
-      // Peer events
-      room.onPeerJoin(pid => {
-        renderPeers(); renderTyping();
-        sMeta({ n: myName }, pid);
-        if (audioStream && isMicOn) room.addStream(audioStream, pid, { t: 'audio', n: myName });
-        if (screenStream && isSharing) room.addStream(screenStream, pid, { t: 'screen', n: myName });
-        setTimeout(() => {
-          const who = peerNames.get(pid) || pid.slice(0,8);
-          notify(who + ' joined', '👋');
-        }, 400);
-      });
-    
-      room.onPeerLeave(pid => {
-        const who = peerNames.get(pid) || pid.slice(0,8);
-        notify(who + ' left', '👋');
-        addMsg(who + ' left the room', 'sys');
-        const a = peerAudio.get(pid);
-        if (a) { a.srcObject = null; a.remove(); peerAudio.delete(pid); }
-        removeTile(pid);
-        peerNames.delete(pid);
-        typingPeers.delete(pid);
-        renderPeers(); renderTyping();
-      });
-    
-      room.onPeerStream((stream, pid, meta) => {
-        const type = meta?.t || 'audio';
-        const name = meta?.n || peerNames.get(pid) || pid.slice(0,8);
-        if (meta?.n) peerNames.set(pid, meta.n);
-        if (type === 'screen') {
-          const e = createTile(pid, name + ' · Screen', false);
-          e.video.srcObject = stream; e.video.play().catch(()=>{});
-        } else {
-          let a = peerAudio.get(pid);
-          if (!a) { a = new Audio(); a.autoplay = true; document.body.appendChild(a); peerAudio.set(pid, a); }
-          a.srcObject = stream;
-          a.play().catch(() => handleAudioBlock(a));
-        }
+        sChat = chatAction;
+
+        const metaAction = activeRoom.makeAction('meta', {
+          onMessage: (data, context) => {
+            const peerId = context?.peerId;
+            if (typeof data?.n === 'string' && peerId) {
+              peerNames.set(peerId, data.n.slice(0, 30));
+              renderPeers();
+            }
+          }
+        });
+        sMeta = metaAction;
+
+        const fileAction = activeRoom.makeAction('file', {
+          onReceive: ({ byteLength }) => {
+            if (byteLength > MAX_FILE_BYTES) {
+              notify('Rejected an incoming file larger than 100 MB.', '⚠️', 'warning');
+              return false;
+            }
+            return true;
+          },
+          onMessage: (buf, context) => receiveFile(buf, context?.peerId, context?.metadata),
+          onReceiveProgress: (percent, context) => {
+            const metadata = context?.metadata;
+            const peerId = context?.peerId;
+            const transferId = typeof metadata?.id === 'string' ? metadata.id : '';
+            if (!peerId || !transferId) return;
+
+            const tid = 'r-' + peerId + '-' + transferId.slice(0, 200);
+            if (!fileMsgs.has(tid)) {
+              const name = typeof metadata.n === 'string' ? metadata.n.slice(0, 255) : 'Incoming file';
+              const type = typeof metadata.t === 'string' ? metadata.t.slice(0, 127) : '';
+              const declaredSize = Number(metadata.s);
+              const size = Number.isFinite(declaredSize) && declaredSize >= 0 ? declaredSize : 0;
+              addFileMsg({
+                name,
+                size,
+                type,
+                transferId: tid,
+                isMine: false,
+                senderName: peerNames.get(peerId) || peerId.slice(0, 8)
+              });
+              const pending = fileMsgs.get(tid);
+              if (pending) {
+                pending.btnEl.disabled = true;
+                pending.btnEl.textContent = 'Receiving…';
+              }
+            }
+
+            const data = fileMsgs.get(tid);
+            if (data?.barEl) data.barEl.style.width = (percent * 100) + '%';
+          }
+        });
+        sFile = fileAction;
+
+        const typingAction = activeRoom.makeAction('typing', {
+          onMessage: (_data, context) => {
+            const peerId = context?.peerId;
+            if (!peerId) return;
+            if (typingPeers.has(peerId)) clearTimeout(typingPeers.get(peerId));
+            const timeout = setTimeout(() => {
+              typingPeers.delete(peerId);
+              renderTyping();
+            }, 3000);
+            typingPeers.set(peerId, timeout);
+            renderTyping();
+          }
+        });
+        sTyping = typingAction;
+
+        activeRoom.onPeerLeave = pid => {
+          const who = peerNames.get(pid) || pid.slice(0, 8);
+          notify(who + ' left', '👋');
+          addMsg(who + ' left the room', 'sys');
+          const audio = peerAudio.get(pid);
+          if (audio) { audio.srcObject = null; audio.remove(); peerAudio.delete(pid); }
+          removeTile(pid);
+          peerNames.delete(pid);
+          if (typingPeers.has(pid)) clearTimeout(typingPeers.get(pid));
+          typingPeers.delete(pid);
+          renderPeers(); renderTyping();
+        };
+
+        activeRoom.onPeerStream = (stream, pid, metadata) => {
+          const type = metadata?.t || 'audio';
+          const name = metadata?.n || peerNames.get(pid) || pid.slice(0, 8);
+          if (metadata?.n) peerNames.set(pid, String(metadata.n).slice(0, 30));
+          if (type === 'screen') {
+            const tile = createTile(pid, name + ' · Screen', false);
+            tile.video.srcObject = stream;
+            tile.video.play().catch(() => {});
+          } else {
+            let audio = peerAudio.get(pid);
+            if (!audio) {
+              audio = new Audio();
+              audio.autoplay = true;
+              document.body.appendChild(audio);
+              peerAudio.set(pid, audio);
+            }
+            audio.srcObject = stream;
+            audio.play().catch(() => handleAudioBlock(audio));
+          }
+          renderPeers();
+        };
+
+        // Assign join last: Trystero immediately replays peers that are already active.
+        activeRoom.onPeerJoin = pid => {
+          renderPeers(); renderTyping();
+          void sMeta.send({ n: myName }, { target: pid }).catch(error => console.warn('Could not send peer metadata:', error));
+          if (audioStream && isMicOn) {
+            activeRoom.addStream(audioStream, { target: pid, metadata: { t: 'audio', n: myName } });
+          }
+          if (screenStream && isSharing) {
+            activeRoom.addStream(screenStream, { target: pid, metadata: { t: 'screen', n: myName } });
+          }
+          setTimeout(() => {
+            const who = peerNames.get(pid) || pid.slice(0, 8);
+            notify(who + ' joined', '👋');
+          }, 400);
+        };
+
+        roomLbl.textContent = rid;
+        selfChip.textContent = 'You: ' + selfId.slice(0, 10) + '…';
+        selfChip.style.display = '';
+        overlay.classList.add('overlay--hidden');
+        appEl.style.display = '';
+        void sMeta.send({ n: myName }).catch(error => console.warn('Could not announce display name:', error));
+        addMsg('You joined as "' + myName + '"', 'sys');
+        notify('Room is open. Share the invite to connect.', '✨', 'success');
+        window.location.hash = encodeURIComponent(rid);
         renderPeers();
-      });
-    
-      // UI switchover
-      roomLbl.textContent = rid;
-      selfChip.textContent = 'You: ' + selfId.slice(0,10) + '…';
-      selfChip.style.display = '';
-      overlay.classList.add('overlay--hidden');
-      appEl.style.display = '';
-      sMeta({ n: myName });
-      addMsg('You joined as "' + myName + '"', 'sys');
-      notify('Joined room: ' + rid, '✨', 'success');
-      window.location.hash = rid;
-      renderPeers();
-      msgInp.focus();
+        msgInp.focus();
+      } catch (error) {
+        console.error('PeerPunch failed to initialize the room:', error);
+        void room?.leave().catch(() => {});
+        room = null;
+        roomId = '';
+        sChat = sFile = sMeta = sTyping = null;
+        notify('Could not open the room. Reload the page and try again.', '❌', 'error');
+      } finally {
+        isJoining = false;
+        joinBtn.disabled = false;
+        joinBtn.removeAttribute('aria-busy');
+        joinBtn.textContent = originalButtonText;
+      }
     }
 
     function leaveRoom() {
       if (audioStream) { room?.removeStream(audioStream); audioStream.getTracks().forEach(t=>t.stop()); audioStream = null; }
       if (screenStream) { room?.removeStream(screenStream); screenStream.getTracks().forEach(t=>t.stop()); screenStream = null; isSharing = false; }
-      room?.leave(); room = null;
+      void room?.leave().catch(() => {}); room = null; roomId = '';
       peerAudio.forEach((a) => { a.srcObject = null; a.remove(); }); peerAudio.clear();
-      screenTiles.forEach(e => e.tile.remove()); screenTiles.clear();
+      screenTiles.forEach(e => { e.video.srcObject = null; e.tile.remove(); }); screenTiles.clear();
       screens.classList.remove('screens--on');
-      peerNames.clear(); typingPeers.clear(); fileStore.clear(); fileMsgs.clear();
+      peerNames.clear();
+      typingPeers.forEach(timeout => clearTimeout(timeout)); typingPeers.clear();
+      releaseAllObjectUrls();
+      fileStore.clear(); fileMsgs.clear();
       sChat = sFile = sMeta = sTyping = null;
       isMicOn = false; isSharing = false;
       syncMicBtn(); screenBtn.classList.remove('active');
@@ -1187,8 +1361,13 @@
     randBtn.addEventListener('click', () => { fRoom.value = randRoom(); });
 
     // URL Hash
+    function readHashRoom() {
+      const raw = window.location.hash.slice(1);
+      try { return decodeURIComponent(raw).trim(); }
+      catch { return raw.trim(); }
+    }
     function checkHash() {
-      const hash = window.location.hash.slice(1).trim();
+      const hash = readHashRoom();
       if (hash) {
         fRoom.value = hash;
         inviteRoom.textContent = hash;
@@ -1199,7 +1378,7 @@
     }
     checkHash();
     window.addEventListener('hashchange', () => {
-      const hash = window.location.hash.slice(1).trim();
+      const hash = readHashRoom();
       if (hash && hash !== roomId) fRoom.value = hash;
     });
 
