@@ -793,7 +793,8 @@
 
     // Trystero actions (set after join)
     let sChat, sFile, sMeta, sTyping, sFun;
-    const messageElements = new Map(); // message ID -> rendered DOM node
+    const messageElements = new Map(); // peer-namespaced message ID -> rendered DOM node
+    const messageOrigins = new Map(); // local message ID -> { ownerId, protocolId }
     const reactionState = new Map(); // message ID -> emoji -> actor -> display name
     const polls = new Map(); // poll ID -> ephemeral poll and peer votes
     const MAX_RENDERED_ITEMS = 300;
@@ -859,6 +860,7 @@
         if (!old) break;
         if (old.dataset.messageId) {
           messageElements.delete(old.dataset.messageId);
+          messageOrigins.delete(old.dataset.messageId);
           reactionState.delete(old.dataset.messageId);
         }
         if (old.dataset.pollId) polls.delete(old.dataset.pollId);
@@ -906,20 +908,25 @@
 
     function reactToMessage(messageId, emoji) {
       if (!room || !sFun || !messageElements.has(messageId)) return;
+      const origin = messageOrigins.get(messageId);
+      if (!origin) return;
       const actors = reactionState.get(messageId)?.get(emoji);
       const active = !actors?.has(selfId);
       setReaction(messageId, emoji, selfId, myName, active);
-      void sFun.send({ type: 'reaction', id: messageId, emoji, active, name: myName }).catch(error => {
+      void sFun.send({ type: 'reaction', targetOwner: origin.ownerId, targetId: origin.protocolId, emoji, active }).catch(error => {
         console.warn('PeerPunch reaction send failed:', error);
       });
     }
 
-    function addMsg(text, kind, senderName = '', messageId = '') {
+    function addMsg(text, kind, senderName = '', protocolId = '', originPeerId = selfId) {
       const div = el('div', `msg msg--${kind}`);
-      const id = messageId || randomHex(16);
+      const safeProtocolId = /^[a-f0-9]{32}$/.test(protocolId) ? protocolId : randomHex(16);
+      const ownerId = String(originPeerId || selfId).slice(0, 256);
+      const id = (kind === 'me' || kind === 'them') ? ownerId + ':' + safeProtocolId : randomHex(16);
       if (kind === 'me' || kind === 'them') {
         div.dataset.messageId = id;
         messageElements.set(id, div);
+        messageOrigins.set(id, { ownerId, protocolId: safeProtocolId });
         const meta = el('span', 'msg__meta');
         const now = new Date();
         const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
@@ -1172,7 +1179,7 @@
         console.error('PeerPunch message send failed:', error);
         notify('Message could not be sent. Check the connection.', '⚠️', 'error');
       });
-      addMsg(text, 'me', '', id);
+      addMsg(text, 'me', '', id, selfId);
       msgInp.value = '';
       msgInp.focus();
       clearTypingSignal();
@@ -1579,7 +1586,7 @@
             const peerId = context?.peerId;
             if (typeof data?.text === 'string' && peerId && data.text.length <= 5000) {
                 const id = typeof data.id === 'string' && /^[a-f0-9]{32}$/.test(data.id) ? data.id : randomHex(16);
-              addMsg(data.text, 'them', peerNames.get(peerId) || peerId.slice(0, 8), id);
+              addMsg(data.text, 'them', peerNames.get(peerId) || peerId.slice(0, 8), id, peerId);
             }
           }
         });
@@ -1658,9 +1665,11 @@
             const peerId = context?.peerId;
             if (!peerId || !data || typeof data !== 'object') return;
             if (data.type === 'reaction') {
-              if (typeof data.id !== 'string' || !/^[a-f0-9]{32}$/.test(data.id) ||
+              if (typeof data.targetId !== 'string' || !/^[a-f0-9]{32}$/.test(data.targetId) ||
+                  typeof data.targetOwner !== 'string' || !data.targetOwner || data.targetOwner.length > 256 ||
                   !REACTION_EMOJIS.includes(data.emoji) || typeof data.active !== 'boolean') return;
-              setReaction(data.id, data.emoji, peerId, peerNames.get(peerId) || peerId.slice(0, 8), data.active);
+              const targetKey = data.targetOwner + ':' + data.targetId;
+              setReaction(targetKey, data.emoji, peerId, peerNames.get(peerId) || peerId.slice(0, 8), data.active);
             } else if (data.type === 'poll') {
               addPoll(data, peerNames.get(peerId) || peerId.slice(0, 8), peerId);
             } else if (data.type === 'vote') {
@@ -1783,7 +1792,7 @@
       releaseAllObjectUrls();
       fileStore.clear(); fileMsgs.clear();
       sChat = sFile = sMeta = sTyping = sFun = null;
-      messageElements.clear(); reactionState.clear(); polls.clear();
+      messageElements.clear(); messageOrigins.clear(); reactionState.clear(); polls.clear();
       isMicOn = false; isSharing = false;
       syncMicBtn(); screenBtn.classList.remove('active');
       msgs.innerHTML = '<div class="msg msg--sys"><div class="msg__bub">Welcome to PeerPunch ✨  Share your Room ID to invite others.</div></div>';
