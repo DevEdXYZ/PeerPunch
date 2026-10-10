@@ -1415,7 +1415,7 @@
       const name = rawName.replaceAll('/', '_').replaceAll(String.fromCharCode(92), '_')
         .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, 255) || 'file';
       const rawType = typeof metadata.t === 'string' ? metadata.t.slice(0, 127) : '';
-      const type = /^[a-zA-Z0-9.+-]+\\/[a-zA-Z0-9.+-]+$/.test(rawType) ? rawType : '';
+      const type = /^[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+$/.test(rawType) ? rawType : '';
       const declaredSize = Number(metadata.s);
       const actualSize = Number(buf.byteLength || 0);
       const size = Number.isFinite(declaredSize) && declaredSize >= 0 ? declaredSize : actualSize;
