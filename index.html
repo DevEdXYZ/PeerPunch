@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PeerPunch — P2P Comms</title>
+  <title>PeerPunch — Secure P2P Comms</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
@@ -519,6 +519,43 @@
       .card__logo { font-size: 2rem; }
       .topbar__logo { font-size: 1.05rem; }
     }
+
+    /* ── Secure party features ── */
+    .pass-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .pass-status { flex:1; min-width:130px; font-size:.62rem; line-height:1.4; color:var(--warn); text-align:left; }
+    .pass-status[data-state="ready"] { color:var(--success); }
+    .pass-status[data-state="bad"] { color:var(--danger); }
+    .security-chip { border-color:rgba(0,230,118,.24); color:var(--success); }
+    .msg__actions { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-top:3px; opacity:.45; transition:opacity .15s; }
+    .msg:hover .msg__actions, .msg:focus-within .msg__actions { opacity:1; }
+    .msg__quick-react { border:1px solid var(--panel-b); background:var(--inp); border-radius:12px; padding:2px 6px; font-size:.72rem; cursor:pointer; }
+    .msg__quick-react:hover, .msg__quick-react:focus-visible { border-color:var(--acc); background:var(--acc-dim); outline:none; }
+    .msg__reactions { display:flex; gap:4px; flex-wrap:wrap; margin-top:3px; }
+    .msg__reaction { border:1px solid var(--panel-b); border-radius:12px; background:var(--inp); color:var(--t2); padding:2px 7px; cursor:pointer; font: .65rem var(--fs); }
+    .msg__reaction.active { border-color:var(--acc); background:var(--acc-dim); color:var(--acc); }
+    .msg--poll { max-width:min(90%,520px); align-self:flex-start; }
+    .poll__card { background:var(--panel); border:1px solid var(--panel-b-acc); border-radius:var(--r-lg); padding:12px; display:flex; flex-direction:column; gap:8px; }
+    .poll__eyebrow { font: .58rem var(--fm); color:var(--acc); letter-spacing:.08em; text-transform:uppercase; }
+    .poll__question { color:var(--t1); font-size:.84rem; font-weight:600; overflow-wrap:anywhere; }
+    .poll__author { color:var(--t3); font-size:.62rem; }
+    .poll__options { display:flex; flex-direction:column; gap:5px; }
+    .poll__option { width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--inp); border:1px solid var(--panel-b); border-radius:8px; color:var(--t2); padding:8px 10px; cursor:pointer; text-align:left; font: .72rem var(--fs); }
+    .poll__option:hover { border-color:var(--acc); color:var(--t1); }
+    .poll__option.active { border-color:var(--acc); background:var(--acc-dim); color:var(--acc); }
+    .poll__count { color:var(--t3); font: .6rem var(--fm); flex-shrink:0; }
+    .party-particle { position:fixed; left:0; bottom:-40px; z-index:900; pointer-events:none; font-size:24px; animation:party-rise 2.2s ease-out forwards; filter:drop-shadow(0 3px 8px rgba(0,0,0,.2)); }
+    @keyframes party-rise { 0% { transform:translate3d(0,0,0) rotate(0deg) scale(.65); opacity:0; } 12% { opacity:1; } 100% { transform:translate3d(var(--drift),-110vh,0) rotate(540deg) scale(1.15); opacity:0; } }
+    @media (max-width:780px) {
+      .chat__tools { gap:4px; padding:6px; }
+      .chat__tools .btn { padding:5px 7px; font-size:.62rem; }
+      .pass-status { min-width:100%; }
+      .msg__actions { opacity:1; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      .blob, .party-particle { animation:none !important; }
+      .party-particle { display:none; }
+      *, *::before, *::after { scroll-behavior:auto !important; transition-duration:.01ms !important; }
+    }
   </style>
 </head>
 <body>
@@ -544,10 +581,10 @@
       <div class="field">
         <label class="field__lbl" for="f-room">Room ID</label>
         <div class="field__wrap field__row">
-          <input class="field__inp" id="f-room" type="text" placeholder="e.g. epic-room-77" autocomplete="off" spellcheck="false">
+          <input class="field__inp" id="f-room" type="text" placeholder="e.g. cosmic-lounge-k7m2…" autocomplete="off" spellcheck="false" maxlength="128">
           <button class="field__rand" id="rand-btn" title="Random room name">🎲</button>
         </div>
-        <span class="field__hint">Share this with friends — anyone with the same ID joins</span>
+        <span class="field__hint">Share the room ID and password separately. Both are needed to enter.</span>
       </div>
 
       <div class="field">
@@ -556,11 +593,16 @@
       </div>
 
       <div class="field">
-        <label class="field__lbl" for="f-pass">Password <span style="opacity:0.4">(optional)</span></label>
+        <label class="field__lbl" for="f-pass">Room password <span style="opacity:0.75">(required)</span></label>
         <div class="field__wrap">
-          <input class="field__inp field__inp--pr" id="f-pass" type="password" placeholder="Shared secret for private rooms" autocomplete="off">
-          <button class="field__eye" id="pass-eye" aria-label="Show password">👁️</button>
+          <input class="field__inp field__inp--pr" id="f-pass" type="password" placeholder="Generate a strong shared secret" autocomplete="off" autocapitalize="off" spellcheck="false" minlength="16" maxlength="256" required>
+          <button class="field__eye" id="pass-eye" type="button" aria-label="Show password">👁️</button>
         </div>
+        <div class="pass-tools">
+          <button class="btn btn--ghost btn--sm" id="generate-pass-btn" type="button">🔐 Generate strong password</button>
+          <span class="pass-status" id="pass-status" data-state="idle">Use 16+ characters. A generated secret is strongest.</span>
+        </div>
+        <span class="field__hint">Share this password separately. It protects signaling setup and is never added to invite links.</span>
       </div>
 
       <div class="field">
@@ -593,7 +635,7 @@
       </details>
 
       <button class="btn btn--primary" id="join-btn" style="width:100%;padding:13px;font-size:0.88rem;border-radius:var(--r);">
-        Connect to Room →
+        Create secure connection →
       </button>
     </div>
   </div>
@@ -609,6 +651,7 @@
       <div class="topbar__meta">
         <div class="topbar__meta-chip">Room: <strong id="room-lbl">—</strong></div>
         <div class="topbar__meta-chip">Peers: <strong id="peer-cnt">0</strong></div>
+        <div class="topbar__meta-chip security-chip" id="security-chip" title="WebRTC encrypts peer data and media; your shared password encrypts signaling session descriptions.">🔐 <strong>E2E</strong> · Password-protected signaling</div>
         <div class="topbar__meta-chip" id="self-chip" style="display:none;"></div>
       </div>
       <div class="topbar__actions">
@@ -639,6 +682,9 @@
             <input class="chat__search" id="chat-search" type="search" placeholder="Search this room's messages…" aria-label="Search messages">
             <span class="chat__search-count" id="search-count"></span>
             <button class="btn btn--icon" id="clear-search" title="Clear search" aria-label="Clear search">×</button>
+            <button class="btn btn--ghost btn--sm" id="theme-btn" type="button" title="Cycle accent themes">🎨 Theme</button>
+            <button class="btn btn--ghost btn--sm" id="poll-btn" type="button" title="Create a live room poll">📊 Poll</button>
+            <button class="btn btn--ghost btn--sm" id="party-btn" type="button" title="Celebrate with everyone on your screen">🎉 Party</button>
           </div>
           <div class="chat__msgs" id="msgs">
             <div class="msg msg--sys"><div class="msg__bub">Welcome to PeerPunch ✨  Share your Room ID to invite others.</div></div>
@@ -682,6 +728,11 @@
     const fTurnUser  = Q('#f-turn-user');
     const fTurnCredential = Q('#f-turn-credential');
     const passEye    = Q('#pass-eye');
+    const passStatus = Q('#pass-status');
+    const generatePassBtn = Q('#generate-pass-btn');
+    const themeBtn   = Q('#theme-btn');
+    const pollBtn    = Q('#poll-btn');
+    const partyBtn   = Q('#party-btn');
     const chatSearch = Q('#chat-search');
     const searchCount = Q('#search-count');
     const clearSearchBtn = Q('#clear-search');
@@ -741,7 +792,12 @@
     let connectionHintTimeout = null;
 
     // Trystero actions (set after join)
-    let sChat, sFile, sMeta, sTyping;
+    let sChat, sFile, sMeta, sTyping, sFun;
+    const messageElements = new Map(); // message ID -> rendered DOM node
+    const reactionState = new Map(); // message ID -> emoji -> actor -> display name
+    const polls = new Map(); // poll ID -> ephemeral poll and peer votes
+    const MAX_RENDERED_ITEMS = 300;
+    const REACTION_EMOJIS = ['👍', '❤️', '😂', '🔥', '🎉'];
 
     function createObjectUrl(blob) {
       const url = URL.createObjectURL(blob);
@@ -797,9 +853,73 @@
     function isVideo(t) { return t && t.startsWith('video/'); }
 
     // ── Chat Message Builder ──
-    function addMsg(text, kind, senderName = '') {
+    function trimChatHistory() {
+      while (msgs.children.length > MAX_RENDERED_ITEMS) {
+        const old = msgs.firstElementChild;
+        if (!old) break;
+        if (old.dataset.messageId) {
+          messageElements.delete(old.dataset.messageId);
+          reactionState.delete(old.dataset.messageId);
+        }
+        if (old.dataset.pollId) polls.delete(old.dataset.pollId);
+        if (old.dataset.transferId) {
+          fileMsgs.delete(old.dataset.transferId);
+          fileStore.delete(old.dataset.transferId);
+        }
+        old.remove();
+      }
+    }
+
+    function renderMessageReactions(messageId) {
+      const node = messageElements.get(messageId);
+      if (!node) return;
+      let row = node.querySelector('.msg__reactions');
+      if (!row) {
+        row = el('div', 'msg__reactions');
+        node.appendChild(row);
+      }
+      row.replaceChildren();
+      const byEmoji = reactionState.get(messageId);
+      if (!byEmoji) return;
+      for (const [emoji, actors] of byEmoji) {
+        if (!actors.size) continue;
+        const button = el('button', 'msg__reaction');
+        button.type = 'button';
+        button.textContent = emoji + ' ' + actors.size;
+        button.title = [...actors.values()].join(', ').slice(0, 240);
+        button.classList.toggle('active', actors.has(selfId));
+        button.addEventListener('click', () => reactToMessage(messageId, emoji));
+        row.appendChild(button);
+      }
+    }
+
+    function setReaction(messageId, emoji, actorId, actorName, active) {
+      if (!messageElements.has(messageId) || !REACTION_EMOJIS.includes(emoji) || !actorId) return;
+      if (!reactionState.has(messageId)) reactionState.set(messageId, new Map());
+      const byEmoji = reactionState.get(messageId);
+      if (!byEmoji.has(emoji)) byEmoji.set(emoji, new Map());
+      const actors = byEmoji.get(emoji);
+      if (active) actors.set(actorId, String(actorName || 'Peer').slice(0, 30));
+      else actors.delete(actorId);
+      renderMessageReactions(messageId);
+    }
+
+    function reactToMessage(messageId, emoji) {
+      if (!room || !sFun || !messageElements.has(messageId)) return;
+      const actors = reactionState.get(messageId)?.get(emoji);
+      const active = !actors?.has(selfId);
+      setReaction(messageId, emoji, selfId, myName, active);
+      void sFun.send({ type: 'reaction', id: messageId, emoji, active, name: myName }).catch(error => {
+        console.warn('PeerPunch reaction send failed:', error);
+      });
+    }
+
+    function addMsg(text, kind, senderName = '', messageId = '') {
       const div = el('div', `msg msg--${kind}`);
+      const id = messageId || randomHex(16);
       if (kind === 'me' || kind === 'them') {
+        div.dataset.messageId = id;
+        messageElements.set(id, div);
         const meta = el('span', 'msg__meta');
         const now = new Date();
         const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
@@ -807,12 +927,6 @@
         const bub = el('div', 'msg__bub');
         bub.textContent = text;
         div.append(meta, bub);
-      } else if (kind === 'sys') {
-        const bub = el('div', 'msg__bub');
-        bub.textContent = text;
-        div.append(bub);
-      }
-      if (kind === 'me' || kind === 'them') {
         const copy = el('button', 'msg__copy');
         copy.type = 'button';
         copy.textContent = 'Copy message';
@@ -825,15 +939,107 @@
           }
         });
         div.appendChild(copy);
+
+        const actions = el('div', 'msg__actions');
+        for (const emoji of REACTION_EMOJIS.slice(0, 3)) {
+          const react = el('button', 'msg__quick-react');
+          react.type = 'button';
+          react.textContent = emoji;
+          react.title = 'React with ' + emoji;
+          react.setAttribute('aria-label', 'React with ' + emoji);
+          react.addEventListener('click', () => reactToMessage(id, emoji));
+          actions.appendChild(react);
+        }
+        div.appendChild(actions);
+        div.appendChild(el('div', 'msg__reactions'));
+      } else if (kind === 'sys') {
+        const bub = el('div', 'msg__bub');
+        bub.textContent = text;
+        div.append(bub);
       }
       msgs.appendChild(div);
+      trimChatHistory();
       msgs.scrollTop = msgs.scrollHeight;
       filterMessages();
       return div;
     }
 
+    function addPoll(data, senderName, senderId) {
+      if (!data || typeof data.id !== 'string' || !/^[a-f0-9]{32}$/.test(data.id) ||
+          typeof data.question !== 'string' || !Array.isArray(data.options) ||
+          data.options.length < 2 || data.options.length > 4 || polls.has(data.id)) return;
+      const question = data.question.trim().slice(0, 180);
+      const options = data.options.filter(option => typeof option === 'string')
+        .map(option => option.trim().slice(0, 60)).filter(Boolean);
+      if (!question || options.length < 2 || options.length !== data.options.length) return;
+
+      const node = el('div', 'msg msg--them msg--poll');
+      node.dataset.pollId = data.id;
+      const card = el('div', 'poll__card');
+      const eyebrow = el('div', 'poll__eyebrow');
+      eyebrow.textContent = '📊 Live room poll';
+      const title = el('div', 'poll__question');
+      title.textContent = question;
+      const author = el('div', 'poll__author');
+      author.textContent = 'By ' + String(senderName || 'Peer').slice(0, 30) + ' · votes stay in this room session';
+      const optionList = el('div', 'poll__options');
+      card.append(eyebrow, title, author, optionList);
+      node.appendChild(card);
+      msgs.appendChild(node);
+      trimChatHistory();
+      const poll = { id: data.id, question, options, creatorId: senderId || '', element: node, optionList, votes: new Map() };
+      polls.set(data.id, poll);
+      renderPoll(data.id);
+      msgs.scrollTop = msgs.scrollHeight;
+      filterMessages();
+    }
+
+    function renderPoll(pollId) {
+      const poll = polls.get(pollId);
+      if (!poll) return;
+      poll.optionList.replaceChildren();
+      poll.options.forEach((option, index) => {
+        let count = 0;
+        for (const vote of poll.votes.values()) if (vote === index) count++;
+        const button = el('button', 'poll__option');
+        button.type = 'button';
+        button.classList.toggle('active', poll.votes.get(selfId) === index);
+        const label = el('span');
+        label.textContent = option;
+        const countEl = el('span', 'poll__count');
+        countEl.textContent = String(count) + (count === 1 ? ' vote' : ' votes');
+        button.append(label, countEl);
+        button.addEventListener('click', () => voteOnPoll(pollId, index));
+        poll.optionList.appendChild(button);
+      });
+    }
+
+    function voteOnPoll(pollId, optionIndex) {
+      const poll = polls.get(pollId);
+      if (!room || !sFun || !poll || !Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= poll.options.length) return;
+      poll.votes.set(selfId, optionIndex);
+      renderPoll(pollId);
+      void sFun.send({ type: 'vote', pollId, optionIndex }).catch(error => {
+        console.warn('PeerPunch vote send failed:', error);
+      });
+    }
+
+    function createPoll() {
+      if (!room || !sFun) { notify('Join a room before starting a poll.', '📊', 'warning'); return; }
+      const questionInput = window.prompt('What should the room decide?');
+      if (!questionInput || !questionInput.trim()) return;
+      const optionsInput = window.prompt('Add 2–4 choices, separated with |', 'Option A | Option B');
+      if (!optionsInput) return;
+      const options = [...new Set(optionsInput.split('|').map(option => option.trim().slice(0, 60)).filter(Boolean))].slice(0, 4);
+      if (options.length < 2) { notify('A poll needs at least two different choices.', '⚠️', 'warning'); return; }
+      const poll = { type: 'poll', id: randomHex(16), question: questionInput.trim().slice(0, 180), options, name: myName };
+      addPoll(poll, myName, selfId);
+      void sFun.send(poll).catch(error => notify('Could not share the poll with peers.', '⚠️', 'error'));
+    }
+
     function addFileMsg({ name, size, type, transferId, isMine, senderName = '' }) {
       const div = el('div', `msg msg--${isMine ? 'me' : 'them'} msg--file`);
+      div.dataset.transferId = transferId;
       const meta = el('span', 'msg__meta');
       const now = new Date();
       const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
@@ -959,13 +1165,14 @@
 
     // ── Send Chat ──
     function sendMsg() {
-      const text = msgInp.value.trim();
+      const text = msgInp.value.trim().slice(0, 5000);
       if (!text || !sChat) return;
-      void sChat.send({ text, n: myName }).catch(error => {
+      const id = randomHex(16);
+      void sChat.send({ text, n: myName, id }).catch(error => {
         console.error('PeerPunch message send failed:', error);
         notify('Message could not be sent. Check the connection.', '⚠️', 'error');
       });
-      addMsg(text, 'me');
+      addMsg(text, 'me', '', id);
       msgInp.value = '';
       msgInp.focus();
       clearTypingSignal();
@@ -1198,12 +1405,16 @@
       if (!pid || !buf) return;
       const metadata = meta && typeof meta === 'object' ? meta : {};
       const rawName = typeof metadata.n === 'string' ? metadata.n : 'file';
-      const name = rawName.replaceAll('/', '_').replaceAll(String.fromCharCode(92), '_').slice(0, 255) || 'file';
-      const type = typeof metadata.t === 'string' ? metadata.t.slice(0, 127) : '';
+      const name = rawName.replaceAll('/', '_').replaceAll(String.fromCharCode(92), '_')
+        .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, 255) || 'file';
+      const rawType = typeof metadata.t === 'string' ? metadata.t.slice(0, 127) : '';
+      const type = /^[a-zA-Z0-9.+-]+\\/[a-zA-Z0-9.+-]+$/.test(rawType) ? rawType : '';
       const declaredSize = Number(metadata.s);
-      const size = Number.isFinite(declaredSize) && declaredSize >= 0 ? declaredSize : (buf.byteLength || 0);
-      if (size > MAX_FILE_BYTES || (buf.byteLength || 0) > MAX_FILE_BYTES) {
-        notify('Rejected an oversized file from ' + (peerNames.get(pid) || 'a peer') + '.', '⚠️', 'warning');
+      const actualSize = Number(buf.byteLength || 0);
+      const size = Number.isFinite(declaredSize) && declaredSize >= 0 ? declaredSize : actualSize;
+      if (size > MAX_FILE_BYTES || actualSize > MAX_FILE_BYTES ||
+          (Number.isFinite(declaredSize) && declaredSize >= 0 && size !== actualSize)) {
+        notify('Rejected an oversized or malformed file from ' + (peerNames.get(pid) || 'a peer') + '.', '⚠️', 'warning');
         return;
       }
       const id = typeof metadata.id === 'string' ? metadata.id.slice(0, 200) : '';
@@ -1292,6 +1503,15 @@
       const rid = fRoom.value.trim();
       const name = fName.value.trim();
       const pass = fPass.value;
+      if (!rid || rid.length > 128 || /[\u0000-\u001f\u007f]/.test(rid)) {
+        notify('Room IDs must be between 1 and 128 characters with no control characters.', '⚠️', 'warning');
+        fRoom.focus(); return;
+      }
+      if (pass.length < 16 || pass.length > 256 || pass.trim() !== pass ||
+          /^(.)\1{11,}$/.test(pass) || /^(password|qwerty|letmein|123456|admin)/i.test(pass)) {
+        notify('Use a room password of at least 16 characters, with no leading/trailing spaces or obvious weak patterns. Generate one for best security.', '🔐', 'warning');
+        fPass.focus(); return;
+      }
       const requestedStrategy = fStrategy.value === 'nostr' ? 'nostr' : 'torrent';
       const turnUrlText = fTurnUrl.value.trim();
       const turnUsername = fTurnUser.value.trim();
@@ -1301,11 +1521,13 @@
       if (!name) { notify('Enter your display name', '⚠️', 'warning'); fName.focus(); return; }
 
       const cfg = {
-        appId: 'peerpunch-v4-2026',
+        appId: 'peerpunch-v5-2026',
         maxReceiveBytes: MAX_FILE_BYTES,
         relayConfig: { redundancy: 5 }
       };
-      if (pass.length > 0) cfg.password = pass;
+      // A shared secret prevents signaling relays from deriving the SDP encryption key.
+      // Never put this secret in the URL or broadcast it to peers.
+      cfg.password = pass;
 
       if (turnUrlText) {
         const turnUrls = turnUrlText.split(',').map(url => url.trim()).filter(Boolean);
@@ -1355,8 +1577,9 @@
         const chatAction = activeRoom.makeAction('chat', {
           onMessage: (data, context) => {
             const peerId = context?.peerId;
-            if (typeof data?.text === 'string' && peerId) {
-              addMsg(data.text.slice(0, 5000), 'them', peerNames.get(peerId) || peerId.slice(0, 8));
+            if (typeof data?.text === 'string' && peerId && data.text.length <= 5000) {
+                const id = typeof data.id === 'string' && /^[a-f0-9]{32}$/.test(data.id) ? data.id : randomHex(16);
+              addMsg(data.text, 'them', peerNames.get(peerId) || peerId.slice(0, 8), id);
             }
           }
         });
@@ -1429,6 +1652,27 @@
           }
         });
         sTyping = typingAction;
+
+        const funAction = activeRoom.makeAction('fun', {
+          onMessage: (data, context) => {
+            const peerId = context?.peerId;
+            if (!peerId || !data || typeof data !== 'object') return;
+            if (data.type === 'reaction') {
+              if (typeof data.id !== 'string' || !/^[a-f0-9]{32}$/.test(data.id) ||
+                  !REACTION_EMOJIS.includes(data.emoji) || typeof data.active !== 'boolean') return;
+              setReaction(data.id, data.emoji, peerId, peerNames.get(peerId) || peerId.slice(0, 8), data.active);
+            } else if (data.type === 'poll') {
+              addPoll(data, peerNames.get(peerId) || peerId.slice(0, 8), peerId);
+            } else if (data.type === 'vote') {
+              const poll = typeof data.pollId === 'string' ? polls.get(data.pollId) : null;
+              if (!poll || !Number.isInteger(data.optionIndex) ||
+                  data.optionIndex < 0 || data.optionIndex >= poll.options.length) return;
+              poll.votes.set(peerId, data.optionIndex);
+              renderPoll(poll.id);
+            }
+          }
+        });
+        sFun = funAction;
 
         activeRoom.onPeerLeave = pid => {
           const who = peerNames.get(pid) || pid.slice(0, 8);
@@ -1516,7 +1760,7 @@
         void room?.leave().catch(() => {});
         room = null;
         roomId = '';
-        sChat = sFile = sMeta = sTyping = null;
+        sChat = sFile = sMeta = sTyping = sFun = null;
         notify('Could not open the room. Reload the page and try again.', '❌', 'error');
       } finally {
         isJoining = false;
@@ -1538,7 +1782,8 @@
       typingPeers.forEach(timeout => clearTimeout(timeout)); typingPeers.clear();
       releaseAllObjectUrls();
       fileStore.clear(); fileMsgs.clear();
-      sChat = sFile = sMeta = sTyping = null;
+      sChat = sFile = sMeta = sTyping = sFun = null;
+      messageElements.clear(); reactionState.clear(); polls.clear();
       isMicOn = false; isSharing = false;
       syncMicBtn(); screenBtn.classList.remove('active');
       msgs.innerHTML = '<div class="msg msg--sys"><div class="msg__bub">Welcome to PeerPunch ✨  Share your Room ID to invite others.</div></div>';
@@ -1579,12 +1824,81 @@
     passEye.addEventListener('click', () => {
       fPass.type = fPass.type === 'password' ? 'text' : 'password';
       passEye.textContent = fPass.type === 'password' ? '👁️' : '🙈';
+      passEye.setAttribute('aria-label', fPass.type === 'password' ? 'Show password' : 'Hide password');
     });
+
+    const PASS_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*-_+=';
+    function secureBase32(length) {
+      const alphabet = 'abcdefghijklmnopqrstuvwxyz234567';
+      const result = [];
+      while (result.length < length) {
+        const bytes = new Uint8Array(Math.max(16, (length - result.length) * 2));
+        crypto.getRandomValues(bytes);
+        for (const byte of bytes) {
+          if (byte < 224) result.push(alphabet[byte % 32]);
+          if (result.length >= length) break;
+        }
+      }
+      return result.join('');
+    }
+    function randomHex(byteLength = 16) {
+      if (!crypto?.getRandomValues) throw new Error('Secure random generation is unavailable in this browser.');
+      const bytes = new Uint8Array(byteLength);
+      crypto.getRandomValues(bytes);
+      return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+    function randomIndex(max) {
+      const limit = Math.floor(256 / max) * max;
+      const bytes = new Uint8Array(1);
+      do { crypto.getRandomValues(bytes); } while (bytes[0] >= limit);
+      return bytes[0] % max;
+    }
+    function makeStrongPassword(length = 28) {
+      const result = [];
+      while (result.length < length) {
+        const bytes = new Uint8Array(Math.max(32, length - result.length + 8));
+        crypto.getRandomValues(bytes);
+        const limit = Math.floor(256 / PASS_ALPHABET.length) * PASS_ALPHABET.length;
+        for (const byte of bytes) {
+          if (byte >= limit) continue;
+          result.push(PASS_ALPHABET[byte % PASS_ALPHABET.length]);
+          if (result.length >= length) break;
+        }
+      }
+      return result.join('');
+    }
+    function updatePasswordStatus() {
+      const pass = fPass.value;
+      if (!pass) {
+        passStatus.textContent = 'Use 16+ characters. A generated secret is strongest.';
+        passStatus.dataset.state = 'idle';
+      } else if (pass.length < 16) {
+        passStatus.textContent = 'Too short — use at least 16 characters.';
+        passStatus.dataset.state = 'bad';
+      } else if (pass.trim() !== pass || /^(.)\1{11,}$/.test(pass) ||
+          /^(password|qwerty|letmein|123456|admin)/i.test(pass)) {
+        passStatus.textContent = 'Looks weak or has edge spaces. Generate a random secret.';
+        passStatus.dataset.state = 'bad';
+      } else {
+        passStatus.textContent = '✓ Length accepted. A generated random password has the most reliable strength.';
+        passStatus.dataset.state = 'ready';
+      }
+    }
+    generatePassBtn.addEventListener('click', () => {
+      fPass.value = makeStrongPassword();
+      updatePasswordStatus();
+      fPass.type = 'text';
+      passEye.textContent = '🙈';
+      passEye.setAttribute('aria-label', 'Hide password');
+      fPass.focus();
+      notify('Strong password generated. Share it separately; it is not in the invite link.', '🔐', 'success');
+    });
+    fPass.addEventListener('input', updatePasswordStatus);
 
     const adj   = ['silent','cosmic','lunar','golden','crimson','azure','onyx','neon','jade','frost','smoke','amber'];
     const nouns = ['lobby','room','hub','den','vault','lounge','nexus','grid','node','zone','base','arena'];
     function randRoom() {
-      return adj[Math.floor(Math.random()*adj.length)] + '-' + nouns[Math.floor(Math.random()*nouns.length)] + '-' + Math.floor(Math.random()*900+100);
+      return adj[randomIndex(adj.length)] + '-' + nouns[randomIndex(nouns.length)] + '-' + secureBase32(16);
     }
     randBtn.addEventListener('click', () => { fRoom.value = randRoom(); });
 
@@ -1620,8 +1934,7 @@
     // Init
     syncMicBtn(); renderPeers();
 
-    console.log('%c🥊 PeerPunch v4', 'color:#00F0C0;font-size:1.3em;font-weight:800;');
-    console.log('%cYour Peer ID: %c' + selfId, 'color:#5E7095;', 'color:#00F0C0;');
+    console.log('%c🥊 PeerPunch', 'color:#00F0C0;font-size:1.3em;font-weight:800;');
   </script>
 </body>
 </html>
