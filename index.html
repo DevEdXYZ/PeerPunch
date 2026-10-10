@@ -868,6 +868,16 @@
           fileMsgs.delete(old.dataset.transferId);
           fileStore.delete(old.dataset.transferId);
         }
+        old.querySelectorAll('img[src], video[src]').forEach(media => {
+          const src = media.getAttribute('src');
+          if (src && objectUrls.has(src)) {
+            if (mediaViewerImg.getAttribute('src') === src) {
+              mediaViewer.hidden = true;
+              mediaViewerImg.removeAttribute('src');
+            }
+            releaseObjectUrl(src);
+          }
+        });
         old.remove();
       }
     }
