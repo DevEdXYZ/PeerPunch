@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PeerPunch — P2P Comms</title>
+  <title>PeerPunch — Secure P2P Comms</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
@@ -584,7 +584,7 @@
           <input class="field__inp" id="f-room" type="text" placeholder="e.g. cosmic-lounge-k7m2…" autocomplete="off" spellcheck="false" maxlength="128">
           <button class="field__rand" id="rand-btn" title="Random room name">🎲</button>
         </div>
-        <span class="field__hint">Share this with friends — anyone with the same ID joins</span>
+        <span class="field__hint">Share the room ID and password separately. Both are needed to enter.</span>
       </div>
 
       <div class="field">
@@ -1406,7 +1406,7 @@
       const metadata = meta && typeof meta === 'object' ? meta : {};
       const rawName = typeof metadata.n === 'string' ? metadata.n : 'file';
       const name = rawName.replaceAll('/', '_').replaceAll(String.fromCharCode(92), '_')
-        .replace(/[\\u0000-\\u001f\\u007f\\u202a-\\u202e\\u2066-\\u2069]/g, '').slice(0, 255) || 'file';
+        .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, 255) || 'file';
       const rawType = typeof metadata.t === 'string' ? metadata.t.slice(0, 127) : '';
       const type = /^[a-zA-Z0-9.+-]+\\/[a-zA-Z0-9.+-]+$/.test(rawType) ? rawType : '';
       const declaredSize = Number(metadata.s);
@@ -1503,12 +1503,12 @@
       const rid = fRoom.value.trim();
       const name = fName.value.trim();
       const pass = fPass.value;
-      if (!rid || rid.length > 128 || /[\\u0000-\\u001f\\u007f]/.test(rid)) {
+      if (!rid || rid.length > 128 || /[\u0000-\u001f\u007f]/.test(rid)) {
         notify('Room IDs must be between 1 and 128 characters with no control characters.', '⚠️', 'warning');
         fRoom.focus(); return;
       }
       if (pass.length < 16 || pass.length > 256 || pass.trim() !== pass ||
-          /^(.)\\1{11,}$/.test(pass) || /^(password|qwerty|letmein|123456|admin)/i.test(pass)) {
+          /^(.)\1{11,}$/.test(pass) || /^(password|qwerty|letmein|123456|admin)/i.test(pass)) {
         notify('Use a room password of at least 16 characters, with no leading/trailing spaces or obvious weak patterns. Generate one for best security.', '🔐', 'warning');
         fPass.focus(); return;
       }
@@ -1875,7 +1875,7 @@
       } else if (pass.length < 16) {
         passStatus.textContent = 'Too short — use at least 16 characters.';
         passStatus.dataset.state = 'bad';
-      } else if (pass.trim() !== pass || /^(.)\\1{11,}$/.test(pass) ||
+      } else if (pass.trim() !== pass || /^(.)\1{11,}$/.test(pass) ||
           /^(password|qwerty|letmein|123456|admin)/i.test(pass)) {
         passStatus.textContent = 'Looks weak or has edge spaces. Generate a random secret.';
         passStatus.dataset.state = 'bad';
@@ -1934,8 +1934,7 @@
     // Init
     syncMicBtn(); renderPeers();
 
-    console.log('%c🥊 PeerPunch v4', 'color:#00F0C0;font-size:1.3em;font-weight:800;');
-    console.log('%cYour Peer ID: %c' + selfId, 'color:#5E7095;', 'color:#00F0C0;');
+    console.log('%c🥊 PeerPunch', 'color:#00F0C0;font-size:1.3em;font-weight:800;');
   </script>
 </body>
 </html>
