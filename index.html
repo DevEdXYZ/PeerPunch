@@ -404,6 +404,26 @@
     .field__inp:focus { border-color: rgba(0,240,192,0.45); box-shadow: 0 0 0 3px var(--acc-dim); }
     .field__inp--pr { padding-right: 42px; }
     .field__hint { font-size: 0.6rem; color: var(--t4); }
+    .field__advanced { display: flex; flex-direction: column; gap: 9px; text-align: left; }
+    .field__advanced > summary { cursor: pointer; color: var(--acc); font-family: var(--fm); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; list-style-position: inside; }
+    .field__advanced > p { color: var(--t3); font-size: 0.68rem; line-height: 1.45; }
+    .field__advanced-grid { display: grid; gap: 8px; }
+    .overlay { overflow-y: auto; padding: 18px 0; }
+    .chat__tools { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--panel-b); flex-shrink: 0; }
+    .chat__search { flex: 1; min-width: 0; background: var(--inp); border: 1px solid var(--panel-b); border-radius: 18px; padding: 7px 12px; color: var(--t1); font: inherit; font-size: 0.72rem; outline: none; }
+    .chat__search:focus { border-color: var(--acc); }
+    .chat__search-count { color: var(--t4); font-family: var(--fm); font-size: 0.6rem; white-space: nowrap; }
+    .msg__copy { align-self: flex-start; border: 0; background: transparent; color: var(--t4); font-size: 0.58rem; cursor: pointer; opacity: 0; padding: 1px 6px; }
+    .msg:hover .msg__copy, .msg:focus-within .msg__copy { opacity: 1; }
+    .msg__copy:hover { color: var(--acc); }
+    .emoji-picker { position: absolute; bottom: calc(100% + 8px); left: 10px; display: none; flex-wrap: wrap; gap: 5px; max-width: 240px; padding: 8px; border: 1px solid var(--panel-b); border-radius: var(--r); background: var(--panel); box-shadow: 0 12px 32px rgba(0,0,0,0.45); z-index: 20; }
+    .emoji-picker--on { display: flex; }
+    .emoji-picker button { background: var(--inp); border: 1px solid var(--panel-b); border-radius: 8px; cursor: pointer; padding: 5px; font-size: 1rem; }
+    .chat__bar { position: relative; }
+    .media-viewer[hidden] { display: none; }
+    .media-viewer { position: fixed; inset: 0; z-index: 800; display: flex; align-items: center; justify-content: center; padding: 48px 18px 18px; background: rgba(0,0,0,0.88); }
+    .media-viewer img { max-width: min(96vw, 1400px); max-height: 88vh; object-fit: contain; box-shadow: 0 20px 90px rgba(0,0,0,0.55); }
+    .media-viewer__close { position: absolute; top: 14px; right: 18px; border: 1px solid var(--panel-b); border-radius: 20px; background: var(--panel); color: var(--t1); cursor: pointer; padding: 8px 14px; }
     .field__eye {
       position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
       background: none; border: none; cursor: pointer; color: var(--t4);
@@ -543,6 +563,35 @@
         </div>
       </div>
 
+      <div class="field">
+        <label class="field__lbl" for="f-strategy">Signaling Network</label>
+        <select class="field__inp" id="f-strategy">
+          <option value="torrent" selected>BitTorrent trackers (try this first)</option>
+          <option value="nostr">Nostr relays (alternative)</option>
+        </select>
+        <span class="field__hint">Both people must use the same network. Invite links carry this setting.</span>
+      </div>
+
+      <details class="field__advanced">
+        <summary>Advanced: TURN server (for restrictive networks)</summary>
+        <p>TURN may help when a firewall or NAT blocks direct WebRTC connections. Enter credentials from your TURN provider. These credentials stay in this browser and are not placed in invite links.</p>
+        <div class="field__advanced-grid">
+          <div class="field">
+            <label class="field__lbl" for="f-turn-url">TURN URL(s)</label>
+            <input class="field__inp" id="f-turn-url" type="text" placeholder="turn:turn.example.com:3478" autocomplete="off" spellcheck="false">
+            <span class="field__hint">Separate multiple URLs with commas.</span>
+          </div>
+          <div class="field">
+            <label class="field__lbl" for="f-turn-user">TURN Username</label>
+            <input class="field__inp" id="f-turn-user" type="text" placeholder="TURN username" autocomplete="off">
+          </div>
+          <div class="field">
+            <label class="field__lbl" for="f-turn-credential">TURN Credential</label>
+            <input class="field__inp" id="f-turn-credential" type="password" placeholder="TURN password / credential" autocomplete="off">
+          </div>
+        </div>
+      </details>
+
       <button class="btn btn--primary" id="join-btn" style="width:100%;padding:13px;font-size:0.88rem;border-radius:var(--r);">
         Connect to Room →
       </button>
@@ -585,11 +634,22 @@
       <div class="panel">
         <div class="screens" id="screens"></div>
         <div class="chat">
+          <div class="chat__tools">
+            <input class="chat__search" id="chat-search" type="search" placeholder="Search this room's messages…" aria-label="Search messages">
+            <span class="chat__search-count" id="search-count"></span>
+            <button class="btn btn--icon" id="clear-search" title="Clear search" aria-label="Clear search">×</button>
+          </div>
           <div class="chat__msgs" id="msgs">
             <div class="msg msg--sys"><div class="msg__bub">Welcome to PeerPunch ✨  Share your Room ID to invite others.</div></div>
           </div>
           <div class="chat__typing" id="typing-area"></div>
           <div class="chat__bar">
+            <div class="emoji-picker" id="emoji-picker" aria-label="Emoji picker">
+              <button type="button">😀</button><button type="button">😂</button><button type="button">❤️</button><button type="button">👍</button>
+              <button type="button">🎉</button><button type="button">🔥</button><button type="button">🤔</button><button type="button">👀</button>
+              <button type="button">🙏</button><button type="button">🥳</button><button type="button">💯</button><button type="button">✨</button>
+            </div>
+            <button class="attach-btn" id="emoji-btn" title="Insert emoji" aria-label="Open emoji picker">😀</button>
             <button class="attach-btn" id="attach-btn" title="Attach file">📎</button>
             <input class="chat__inp" id="msg-inp" type="text" placeholder="Message…" autocomplete="off" maxlength="5000">
             <button class="btn btn--primary btn--sm" id="send-btn">Send</button>
@@ -599,11 +659,16 @@
     </div>
   </div>
 
+  <div class="media-viewer" id="media-viewer" role="dialog" aria-modal="true" aria-label="Image preview" hidden>
+    <button class="media-viewer__close" id="media-viewer-close" type="button">Close ✕</button>
+    <img id="media-viewer-img" alt="">
+  </div>
   <input type="file" id="file-input" style="display:none;" multiple>
   <a id="dl-link" style="display:none;" download></a>
 
   <script type="module">
-    import { joinRoom, selfId, getRelaySockets } from 'https://esm.run/trystero@0.26.0';
+    import { joinRoom as joinNostrRoom, selfId, getRelaySockets as getNostrRelaySockets } from 'https://esm.run/trystero@0.26.0';
+    import { joinRoom as joinTorrentRoom, getRelaySockets as getTorrentRelaySockets } from 'https://esm.run/@trystero-p2p/torrent@0.26.0';
 
     // ── DOM ──
     const Q = s => document.querySelector(s);
@@ -611,7 +676,19 @@
     const fRoom      = Q('#f-room');
     const fName      = Q('#f-name');
     const fPass      = Q('#f-pass');
+    const fStrategy  = Q('#f-strategy');
+    const fTurnUrl   = Q('#f-turn-url');
+    const fTurnUser  = Q('#f-turn-user');
+    const fTurnCredential = Q('#f-turn-credential');
     const passEye    = Q('#pass-eye');
+    const chatSearch = Q('#chat-search');
+    const searchCount = Q('#search-count');
+    const clearSearchBtn = Q('#clear-search');
+    const emojiBtn = Q('#emoji-btn');
+    const emojiPicker = Q('#emoji-picker');
+    const mediaViewer = Q('#media-viewer');
+    const mediaViewerImg = Q('#media-viewer-img');
+    const mediaViewerClose = Q('#media-viewer-close');
     const randBtn    = Q('#rand-btn');
     const joinBtn    = Q('#join-btn');
     const inviteHint = Q('#invite-hint');
@@ -657,6 +734,9 @@
     const MAX_FILE_BYTES = 100 * 1024 * 1024;
     let fileCtr = 0;
     let isJoining = false;
+    let activeStrategy = 'torrent';
+    let activeRelaySockets = getTorrentRelaySockets;
+    let connectionHintTimeout = null;
 
     // Trystero actions (set after join)
     let sChat, sFile, sMeta, sTyping;
@@ -730,8 +810,23 @@
         bub.textContent = text;
         div.append(bub);
       }
+      if (kind === 'me' || kind === 'them') {
+        const copy = el('button', 'msg__copy');
+        copy.type = 'button';
+        copy.textContent = 'Copy message';
+        copy.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(String(text));
+            notify('Message copied', '📋', 'success');
+          } catch {
+            notify('Clipboard unavailable in this browser context.', '⚠️', 'warning');
+          }
+        });
+        div.appendChild(copy);
+      }
       msgs.appendChild(div);
       msgs.scrollTop = msgs.scrollHeight;
+      filterMessages();
       return div;
     }
 
@@ -770,6 +865,7 @@
       msgs.scrollTop = msgs.scrollHeight;
 
       fileMsgs.set(transferId, { barEl: bar, btnEl: btn, previewEl: preview });
+      filterMessages();
       return div;
     }
 
@@ -781,8 +877,17 @@
       if (isImage(type)) {
         const img = el('img');
         img.src = url;
-        img.alt = 'Image preview';
+        img.alt = 'Image preview — click to enlarge';
         img.loading = 'lazy';
+        img.tabIndex = 0;
+        img.style.cursor = 'zoom-in';
+        img.addEventListener('click', () => openMediaViewer(url, img.alt));
+        img.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openMediaViewer(url, img.alt);
+          }
+        });
         previewEl.appendChild(img);
         previewEl.style.display = '';
       } else if (isVideo(type)) {
@@ -794,6 +899,61 @@
         previewEl.style.display = '';
       }
     }
+
+    function openMediaViewer(url, alt = 'Image preview') {
+      mediaViewerImg.src = url;
+      mediaViewerImg.alt = alt;
+      mediaViewer.hidden = false;
+      mediaViewerClose.focus();
+    }
+    function closeMediaViewer() {
+      mediaViewer.hidden = true;
+      mediaViewerImg.src = '';
+    }
+    mediaViewerClose.addEventListener('click', closeMediaViewer);
+    mediaViewer.addEventListener('click', event => {
+      if (event.target === mediaViewer) closeMediaViewer();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !mediaViewer.hidden) closeMediaViewer();
+    });
+
+    // ── Chat search ──
+    function filterMessages() {
+      const query = chatSearch.value.trim().toLowerCase();
+      let visible = 0;
+      let total = 0;
+      for (const message of msgs.children) {
+        total += 1;
+        const matches = !query || message.textContent.toLowerCase().includes(query);
+        message.hidden = !matches;
+        if (matches) visible += 1;
+      }
+      searchCount.textContent = query ? visible + '/' + total : '';
+    }
+    chatSearch.addEventListener('input', filterMessages);
+    clearSearchBtn.addEventListener('click', () => {
+      chatSearch.value = '';
+      filterMessages();
+      chatSearch.focus();
+    });
+
+    emojiBtn.addEventListener('click', () => emojiPicker.classList.toggle('emoji-picker--on'));
+    emojiPicker.addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      const emoji = button.textContent;
+      const start = msgInp.selectionStart ?? msgInp.value.length;
+      const end = msgInp.selectionEnd ?? start;
+      msgInp.setRangeText(emoji, start, end, 'end');
+      msgInp.focus();
+      emojiPicker.classList.remove('emoji-picker--on');
+    });
+    document.addEventListener('click', event => {
+      if (!emojiPicker.contains(event.target) && event.target !== emojiBtn) {
+        emojiPicker.classList.remove('emoji-picker--on');
+      }
+    });
 
     // ── Send Chat ──
     function sendMsg() {
@@ -851,7 +1011,7 @@
       let relayOpen = false;
       if (inRoom) {
         try {
-          relayOpen = Object.values(getRelaySockets()).some(
+          relayOpen = Object.values(activeRelaySockets()).some(
             socket => socket && socket.readyState === WebSocket.OPEN
           );
         } catch (error) {
@@ -867,8 +1027,8 @@
         : peerCount > 0
           ? 'Connected to ' + peerCount + ' peer' + (peerCount === 1 ? '' : 's')
           : relayOpen
-            ? 'Room open; signaling is online, waiting for peers'
-            : 'Room open; signaling relays are reconnecting or unavailable';
+            ? 'Room open via ' + activeStrategy + '; signaling sockets are open, waiting for peers'
+            : 'Room open via ' + activeStrategy + '; signaling sockets are reconnecting or unavailable';
     }
 
     function buildPeerEl({ name, isMe = false, pid, hasMic, hasScr }) {
@@ -1001,6 +1161,9 @@
       const id = 's-' + selfId + '-' + (++fileCtr);
       addFileMsg({ name: file.name, size: file.size, type: file.type, transferId: id, isMine: true });
       try {
+        if (isImage(file.type) || isVideo(file.type)) {
+          showFilePreview(id, file, file.type);
+        }
         const buf = await file.arrayBuffer();
         await sFile.send(buf, {
           metadata: { n: file.name.slice(0, 255), t: file.type, s: file.size, id },
@@ -1125,8 +1288,39 @@
       const rid = fRoom.value.trim();
       const name = fName.value.trim();
       const pass = fPass.value;
+      const requestedStrategy = fStrategy.value === 'nostr' ? 'nostr' : 'torrent';
+      const turnUrlText = fTurnUrl.value.trim();
+      const turnUsername = fTurnUser.value.trim();
+      const turnCredential = fTurnCredential.value;
+
       if (!rid) { notify('Enter a Room ID', '⚠️', 'warning'); fRoom.focus(); return; }
       if (!name) { notify('Enter your display name', '⚠️', 'warning'); fName.focus(); return; }
+
+      const cfg = {
+        appId: 'peerpunch-v4-2026',
+        maxReceiveBytes: MAX_FILE_BYTES,
+        relayConfig: { redundancy: 5 }
+      };
+      if (pass.length > 0) cfg.password = pass;
+
+      if (turnUrlText) {
+        const turnUrls = turnUrlText.split(',').map(url => url.trim()).filter(Boolean);
+        if (!turnUrls.length || turnUrls.some(url => !/^turns?:/i.test(url))) {
+          notify('TURN URLs must start with turn: or turns:.', '⚠️', 'warning');
+          fTurnUrl.focus();
+          return;
+        }
+        if (!turnUsername || !turnCredential) {
+          notify('Enter both the TURN username and credential.', '⚠️', 'warning');
+          fTurnUser.focus();
+          return;
+        }
+        cfg.turnConfig = [{ urls: turnUrls, username: turnUsername, credential: turnCredential }];
+      } else if (turnUsername || turnCredential) {
+        notify('Enter a TURN URL as well as the TURN credentials.', '⚠️', 'warning');
+        fTurnUrl.focus();
+        return;
+      }
 
       isJoining = true;
       joinBtn.disabled = true;
@@ -1135,26 +1329,21 @@
       joinBtn.textContent = 'Connecting…';
       myName = name;
       roomId = rid;
-
-      const cfg = {
-        appId: 'peerpunch-v4-2026',
-        maxReceiveBytes: MAX_FILE_BYTES,
-        // Let Trystero maintain its relay list; hard-coded public relays can go stale.
-        relayConfig: { redundancy: 5 }
-      };
-      if (pass.length > 0) cfg.password = pass;
+      activeStrategy = requestedStrategy;
+      activeRelaySockets = activeStrategy === 'torrent' ? getTorrentRelaySockets : getNostrRelaySockets;
+      const selectedJoinRoom = activeStrategy === 'torrent' ? joinTorrentRoom : joinNostrRoom;
 
       try {
-        room = joinRoom(cfg, rid, {
+        room = selectedJoinRoom(cfg, rid, {
           onJoinError: details => {
             if (!room || roomId !== rid) return;
             console.warn('PeerPunch peer connection issue:', details);
             const reason = typeof details?.error === 'string' ? details.error : '';
-            notify(
-              reason ? 'Peer connection issue: ' + reason : 'A peer could not connect. A restrictive network may require TURN.',
-              '🔌',
-              'warning'
-            );
+            const lowerReason = reason.toLowerCase();
+            const hint = lowerReason.includes('password')
+              ? 'Check that everyone entered the same room password.'
+              : 'Confirm that everyone uses the same room ID and signaling network. Restrictive NAT/firewall networks may require TURN.';
+            notify('Peer connection failed' + (reason ? ': ' + reason : '') + '. ' + hint, '🔌', 'warning');
           }
         });
 
@@ -1295,8 +1484,27 @@
         appEl.style.display = '';
         void sMeta.send({ n: myName }).catch(error => console.warn('Could not announce display name:', error));
         addMsg('You joined as "' + myName + '"', 'sys');
-        notify('Room is open. Share the invite to connect.', '✨', 'success');
-        window.location.hash = encodeURIComponent(rid);
+        notify('Room open via ' + (activeStrategy === 'torrent' ? 'BitTorrent trackers' : 'Nostr relays') + '. Both users must choose the same network.', '✨', 'success');
+
+        const inviteUrl = new URL(window.location.href);
+        inviteUrl.searchParams.set('signal', activeStrategy);
+        inviteUrl.hash = rid;
+        window.history.replaceState(null, '', inviteUrl);
+
+        if (connectionHintTimeout) clearTimeout(connectionHintTimeout);
+        connectionHintTimeout = setTimeout(() => {
+          if (room !== activeRoom) return;
+          const peerCount = Object.keys(activeRoom.getPeers?.() ?? {}).length;
+          if (peerCount === 0) {
+            notify(
+              activeStrategy === 'torrent'
+                ? 'No peer yet. Confirm the invite, room ID, and password match on both devices.'
+                : 'No peer yet. Try BitTorrent trackers and share the new invite; restrictive networks may need TURN.',
+              '🔌',
+              'warning'
+            );
+          }
+        }, 15000);
         renderPeers();
         msgInp.focus();
       } catch (error) {
@@ -1317,6 +1525,7 @@
     function leaveRoom() {
       if (audioStream) { room?.removeStream(audioStream); audioStream.getTracks().forEach(t=>t.stop()); audioStream = null; }
       if (screenStream) { room?.removeStream(screenStream); screenStream.getTracks().forEach(t=>t.stop()); screenStream = null; isSharing = false; }
+      if (connectionHintTimeout) { clearTimeout(connectionHintTimeout); connectionHintTimeout = null; }
       void room?.leave().catch(() => {}); room = null; roomId = '';
       peerAudio.forEach((a) => { a.srcObject = null; a.remove(); }); peerAudio.clear();
       screenTiles.forEach(e => { e.video.srcObject = null; e.tile.remove(); }); screenTiles.clear();
@@ -1329,6 +1538,8 @@
       isMicOn = false; isSharing = false;
       syncMicBtn(); screenBtn.classList.remove('active');
       msgs.innerHTML = '<div class="msg msg--sys"><div class="msg__bub">Welcome to PeerPunch ✨  Share your Room ID to invite others.</div></div>';
+      chatSearch.value = '';
+      filterMessages();
       typingArea.textContent = '';
       peerCnt.textContent = '0';
       connDot.classList.remove('dot--on');
@@ -1368,6 +1579,10 @@
     }
     function checkHash() {
       const hash = readHashRoom();
+      const inviteStrategy = new URLSearchParams(window.location.search).get('signal');
+      if (inviteStrategy === 'nostr' || inviteStrategy === 'torrent') {
+        fStrategy.value = inviteStrategy;
+      }
       if (hash) {
         fRoom.value = hash;
         inviteRoom.textContent = hash;
