@@ -9,7 +9,7 @@ PeerPunch is intentionally small: the entire application lives in [`index.html`]
 ## What it does
 
 - **Room-based peer discovery** — users join the same room ID to discover each other.
-- **Optional room password** — when provided, the shared secret is passed to Trystero so signaling session descriptions are encrypted with that password.
+- **Required room password** — the shared secret is passed to Trystero to encrypt signaling session descriptions; share it out-of-band.
 - **Realtime text chat** — sends messages over Trystero/WebRTC data channels.
 - **Typing indicators** — lightweight `typing` action with automatic expiry.
 - **Voice chat** — microphone streams are added to the active WebRTC room.
@@ -78,11 +78,12 @@ PeerPunch depends on modern browser APIs:
 1. The user enters a room ID and display name.
 2. `doJoin()` builds a Trystero config with `appId: 'peerpunch-v5-2026'`, uses the selected signaling network, and always sets the required shared password so signaling session descriptions are encrypted with the password-derived key.
 3. `joinRoom(config, roomId, callbacks)` creates or joins the WebRTC room and reports peer-connection errors.
-4. PeerPunch registers four Trystero message actions:
-   - `chat` for text messages
+4. PeerPunch registers five Trystero message actions:
+   - `chat` for text messages and message IDs
    - `meta` for display-name exchange
    - `file` for file payloads and progress callbacks
    - `typing` for typing indicators
+   - `fun` for reactions and live polls
 5. Peer events update the member list, announce joins/leaves, and attach incoming media streams.
 6. Once connected, application payloads move over WebRTC between peers rather than through a PeerPunch backend.
 
@@ -127,6 +128,7 @@ Important details:
 ```text
 .
 ├── README.md     # Project documentation
+├── SECURITY.md   # Security model and maintainer checklist
 └── index.html    # Entire PeerPunch application
 ```
 
