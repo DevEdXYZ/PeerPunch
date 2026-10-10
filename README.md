@@ -9,7 +9,7 @@ PeerPunch is intentionally small: the entire application lives in [`index.html`]
 ## What it does
 
 - **Room-based peer discovery** — users join the same room ID to discover each other.
-- **Required room password** — the shared secret is passed to Trystero to encrypt signaling session descriptions; share it out-of-band.
+- **Optional room password** — when provided, the shared secret is passed to Trystero so signaling session descriptions are encrypted with that password.
 - **Realtime text chat** — sends messages over Trystero/WebRTC data channels.
 - **Typing indicators** — lightweight `typing` action with automatic expiry.
 - **Voice chat** — microphone streams are added to the active WebRTC room.
@@ -20,10 +20,7 @@ PeerPunch is intentionally small: the entire application lives in [`index.html`]
 - **Alternative signaling** — choose BitTorrent trackers or Nostr relays; invite links remember the selected network.
 - **TURN support** — optionally configure your own TURN URL and credentials for networks that block direct WebRTC paths.
 - **Local image previews** — image/video previews are shown to the sender as well as the receiver; images can be enlarged.
-- **Chat tools** — search messages, copy text, use the emoji picker, and react to individual messages.
-- **Live polls** — create room polls with 2–4 options and change your vote; poll state is ephemeral and room-local.
-- **Personal themes and party mode** — cycle through five accent palettes and trigger a local confetti celebration.
-- **Safer setup** — required strong shared room password, one-click cryptographically random password generation, and higher-entropy room IDs.
+- **Chat tools** — search messages, copy text, and use a quick emoji picker.
 - **One-click signaling retry** — when no peers are present, switch between the two discovery networks and copy a fresh invite.
 - **Connection diagnostics** — the status dot distinguishes an active peer connection, available signaling with no peers yet, and relays that are reconnecting or unavailable.
 
@@ -34,10 +31,9 @@ PeerPunch is intentionally small: the entire application lives in [`index.html`]
 1. Open <https://peerpunch.netlify.app>.
 2. Enter a **Room ID** or press the dice button to generate one.
 3. Enter a **Display Name**.
-4. Click **Generate strong password** (recommended) or enter a unique password of at least 16 characters. Avoid leading/trailing spaces and obvious patterns.
-5. Share the password separately with intended participants. It is deliberately **not** included in invite links.
-6. Click **Create secure connection**.
-7. Share the invite link or room ID with the people you want to reach.
+4. Optionally enter a **Password**. Everyone in the room must use the exact same password.
+5. Click **Join Room**.
+6. Share the invite link or room ID with the people you want to reach.
 
 ### Run locally
 
@@ -49,7 +45,7 @@ python3 -m http.server 8080
 
 Then open <http://localhost:8080>.
 
-No dependencies need to be installed locally. The page imports pinned Trystero `0.26.0` from `https://esm.run/trystero@0.26.0` and the BitTorrent strategy from `https://esm.run/@trystero-p2p/torrent@0.26.0`, plus Google Fonts at runtime. These pinned CDN imports remain a supply-chain dependency; self-host audited copies for a stronger boundary.
+No dependencies need to be installed locally. The page imports pinned Trystero `0.26.0` from `https://esm.run/trystero@0.26.0` and the BitTorrent strategy from `https://esm.run/@trystero-p2p/torrent@0.26.0`, plus Google Fonts at runtime.
 
 ## Browser requirements
 
@@ -69,21 +65,20 @@ PeerPunch depends on modern browser APIs:
 
 `index.html` contains the markup, styling, and JavaScript for the whole product:
 
-- The **join overlay** collects the room ID, display name, and required shared password. The password is never added to an invite URL or saved by PeerPunch.
+- The **join overlay** collects the room ID, display name, and optional password.
 - The **app shell** contains the top bar, peer list, media controls, screen-share area, chat feed, and composer.
 - The **script module** imports `joinRoom` and `selfId` from Trystero, joins a room, registers actions, and wires UI events.
 
 ### Connection flow
 
 1. The user enters a room ID and display name.
-2. `doJoin()` builds a Trystero config with `appId: 'peerpunch-v5-2026'`, uses the selected signaling network, and always sets the required shared password so signaling session descriptions are encrypted with the password-derived key.
+2. `doJoin()` builds a Trystero config with `appId: 'peerpunch-v4-2026'`, uses Trystero's maintained default Nostr relays with redundancy, and adds `password` only when the password field is non-empty.
 3. `joinRoom(config, roomId, callbacks)` creates or joins the WebRTC room and reports peer-connection errors.
-4. PeerPunch registers five Trystero message actions:
-   - `chat` for text messages and message IDs
+4. PeerPunch registers four Trystero message actions:
+   - `chat` for text messages
    - `meta` for display-name exchange
    - `file` for file payloads and progress callbacks
    - `typing` for typing indicators
-   - `fun` for reactions and live polls
 5. Peer events update the member list, announce joins/leaves, and attach incoming media streams.
 6. Once connected, application payloads move over WebRTC between peers rather than through a PeerPunch backend.
 
@@ -102,14 +97,12 @@ PeerPunch has no application backend and does not store messages, files, names, 
 
 Important details:
 
-- **Chat, reactions, polls, files, voice, and screen streams travel over WebRTC peer connections.** WebRTC encrypts data and media end-to-end between connected browsers; files and chat are not sent through PeerPunch servers.
-- **The required shared password protects signaling setup.** Trystero uses it to encrypt session descriptions with AES-GCM while those descriptions traverse public signaling infrastructure. All participants must use the same secret, and it must be shared out-of-band.
-- **A password is not identity verification.** A participant who knows the secret can join; display names remain self-reported. Protect the secret and only share it with the intended people.
-- **Room IDs are locators, not authentication.** New IDs include a cryptographically generated random suffix to reduce accidental collisions and guessing, but the password remains essential.
-- **The URL hash contains the room ID only.** Invite links do not contain the password or TURN credentials. Anyone who gets an invite can learn the room ID, so share links thoughtfully.
-- **No persistence is implemented.** Messages, polls, reactions, files, and media are held in browser memory and cleared when leaving or reloading. Received files are not uploaded to storage.
-- **Trust the endpoints and shipped JavaScript.** E2E transport cannot protect content from a compromised browser/device, malicious participant, malicious modified app build, or someone who copies or records received content. Runtime dependencies are loaded from pinned CDN URLs; self-host them for a stronger supply-chain boundary.
-- **Network metadata remains visible.** Signaling providers can observe room topics/traffic timing and connection-related metadata; peers may learn network information required by WebRTC. TURN servers relay encrypted transport packets when needed.
+- **WebRTC media/data channels are encrypted by design.** Chat, files, microphone audio, and screen streams use WebRTC transport once peers connect.
+- **Signaling still uses public infrastructure.** Trystero needs a signaling/peer-discovery medium to exchange connection metadata before WebRTC can connect peers.
+- **Room IDs are not secrets.** Anyone who knows the room ID can try to join an unprotected room.
+- **Use a password for private rooms.** With a password, Trystero encrypts session descriptions using the shared secret; every participant must use the same value.
+- **The URL hash contains the room ID.** Invite links make joining easier, but they also expose the room ID to anyone who receives the link.
+- **No persistence is implemented.** Downloads and previews are generated locally; PeerPunch does not upload files to storage.
 
 ## Limitations
 
@@ -117,9 +110,7 @@ Important details:
 - **TURN is optional and user-configured.** PeerPunch lets you enter your provider's TURN URL and credentials; these are kept out of invite links. Without TURN, restrictive NAT/firewall setups can still block direct connections.
 - **No message history.** Late joiners only see messages sent after they join.
 - **No identity verification.** Display names are self-reported and can be duplicated or impersonated.
-- **No moderation or role-based access control.** Anyone with both the room ID and shared password can join; peers can save files or capture audio/video they receive.
-- **Password strength matters.** The generator uses browser cryptographic randomness. Weak hand-picked passwords can reduce protection for signaling descriptions.
-- **No independent application-layer cryptographic review or browser-to-browser integration test is provided by this single-file project.** Review the Trystero version and test with the browser/network combinations you plan to use.
+- **No moderation or access control beyond the shared room ID/password.** Use high-entropy room names and a password for sensitive sessions.
 - **Large files are memory-heavy.** The current implementation reads each file into an `ArrayBuffer` before sending, and currently limits each transfer to 100 MiB.
 - **External runtime dependencies are loaded from CDNs.** The app imports Trystero through `esm.run` and fonts through Google Fonts.
 
@@ -128,7 +119,6 @@ Important details:
 ```text
 .
 ├── README.md     # Project documentation
-├── SECURITY.md   # Security model and maintainer checklist
 └── index.html    # Entire PeerPunch application
 ```
 
