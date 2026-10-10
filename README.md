@@ -21,6 +21,7 @@ PeerPunch is intentionally small: the entire application lives in [`index.html`]
 - **TURN support** — optionally configure your own TURN URL and credentials for networks that block direct WebRTC paths.
 - **Local image previews** — image/video previews are shown to the sender as well as the receiver; images can be enlarged.
 - **Chat tools** — search messages, copy text, and use a quick emoji picker.
+- **One-click signaling retry** — when no peers are present, switch between the two discovery networks and copy a fresh invite.
 - **Connection diagnostics** — the status dot distinguishes an active peer connection, available signaling with no peers yet, and relays that are reconnecting or unavailable.
 
 ## Quick start

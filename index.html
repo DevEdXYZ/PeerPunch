@@ -613,6 +613,7 @@
       </div>
       <div class="topbar__actions">
         <button class="btn btn--ghost btn--sm" id="invite-btn" title="Copy invite link">🔗 Invite</button>
+        <button class="btn btn--ghost btn--sm" id="switch-network-btn" title="Switch signaling network and try again" style="display:none;">⇄ Network</button>
         <button class="btn btn--danger btn--sm" id="leave-btn">Leave</button>
       </div>
     </div>
@@ -700,6 +701,7 @@
     const selfChip   = Q('#self-chip');
     const inviteBtn  = Q('#invite-btn');
     const leaveBtn   = Q('#leave-btn');
+    const switchNetworkBtn = Q('#switch-network-btn');
     const peerList   = Q('#peer-list');
     const screens    = Q('#screens');
     const msgs       = Q('#msgs');
@@ -1003,6 +1005,7 @@
         peerList.appendChild(item);
       }
       peerCnt.textContent = pids.length;
+      switchNetworkBtn.style.display = room && pids.length === 0 ? '' : 'none';
       updateConnectionStatus(pids.length);
     }
 
@@ -1249,7 +1252,8 @@
     // ── Keyboard Shortcuts ──
     document.addEventListener('keydown', e => {
       if (!room) return;
-      if (e.target === msgInp) return; // don't intercept while typing
+      if (e.target === msgInp || e.target === chatSearch || e.target?.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)) return; // don't intercept while editing fields
       if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMic(); }
       if (e.key === 's' || e.key === 'S') { e.preventDefault(); toggleScreen(); }
       if (e.key === 'f' || e.key === 'F') { e.preventDefault(); fileInput.click(); }
@@ -1555,6 +1559,19 @@
     // ── UI Events ──
     joinBtn.addEventListener('click', doJoin);
     leaveBtn.addEventListener('click', leaveRoom);
+    switchNetworkBtn.addEventListener('click', async () => {
+      const currentRoom = roomId || fRoom.value.trim();
+      const nextStrategy = activeStrategy === 'torrent' ? 'nostr' : 'torrent';
+      fRoom.value = currentRoom;
+      fStrategy.value = nextStrategy;
+      leaveRoom();
+      fRoom.value = currentRoom;
+      fStrategy.value = nextStrategy;
+      await doJoin();
+      if (room) {
+        notify('Switched to ' + (nextStrategy === 'torrent' ? 'BitTorrent trackers' : 'Nostr relays') + '. Copy a fresh invite and send it to your friend.', '🔁', 'success');
+      }
+    });
     fRoom.addEventListener('keydown', e => { if (e.key === 'Enter') fName.focus(); });
     fName.addEventListener('keydown', e => { if (e.key === 'Enter') fPass.focus(); });
     fPass.addEventListener('keydown', e => { if (e.key === 'Enter') doJoin(); });
